@@ -16,7 +16,7 @@ except Exception:
 # 3. 사이드바 (주요 안내 및 빠른 질문 버튼)
 with st.sidebar:
     st.header("📌 주요 안내")
-    st.info("💡 공모주 청약 정보, 일정, 주관사, 균등/비례 청약 전략을 질문해 보세요.")
+    st.info("💡 실시간 구글 웹 검색 기능이 적용되어 최신 공모주 정보를 분석합니다.")
     
     st.subheader("⚡ 빠른 질문하기")
     if st.button("이번 달 공모주 일정 알려줘"):
@@ -66,18 +66,17 @@ if user_query:
         1. 핵심 요약 (청약일, 공모가, 주관사 등)
         2. 기업 개요 및 관전 포인트
         3. 청약 전략 및 주의사항 (비등/균등 배정 팁)
-        
-        모르는 정보가 있거나 실시간 조회가 필요할 땐 정중하게 안내해줘.
         """
 
+        # 1차 시도: 구글 실시간 검색 Grounding이 포함된 gemini-2.5-flash
         try:
-            # 1차 시도: 가장 안정적인 gemini-1.5-flash 모델 사용
             response = client.models.generate_content_stream(
-                model="gemini-1.5-flash",
+                model="gemini-2.5-flash",
                 contents=user_query,
                 config=types.GenerateContentConfig(
                     system_instruction=system_instruction,
                     temperature=0.3,
+                    tools=[types.Tool(google_search=types.GoogleSearch())] # 실시간 최신 정보 검색 기능
                 )
             )
 
@@ -89,10 +88,10 @@ if user_query:
             response_placeholder.markdown(full_response)
 
         except Exception as e:
-            # 503 과부하 또는 기타 오류 발생 시 2차 시도 (gemini-1.5-pro 백업)
+            # 2차 시도 (백업): 기본 고속 모델 gemini-2.0-flash
             try:
                 response = client.models.generate_content_stream(
-                    model="gemini-1.5-pro",
+                    model="gemini-2.0-flash",
                     contents=user_query,
                     config=types.GenerateContentConfig(
                         system_instruction=system_instruction,
@@ -105,7 +104,7 @@ if user_query:
                         response_placeholder.markdown(full_response + "▌")
                 response_placeholder.markdown(full_response)
             except Exception as inner_e:
-                full_response = f"❌ 구글 API 서버 일시적 과부하입니다. 잠시 후 다시 시도해 주세요.\n(상세 오류: {str(inner_e)})"
+                full_response = f"❌ API 호출에 실패했습니다. API 키 또는 네트워크 상태를 확인해 주세요.\n(상세 오류: {str(inner_e)})"
                 response_placeholder.markdown(full_response)
 
         # 답변 저장
