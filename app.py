@@ -71,7 +71,7 @@ if user_query:
         try:
             # Gemini 모델 호출 (실시간 스트리밍 답변)
             response = client.models.generate_content_stream(
-                model="gemini-2.5-flash",
+                model="gemini-3.6-flash",
                 contents=user_query,
                 config=types.GenerateContentConfig(
                     system_instruction=system_instruction,
