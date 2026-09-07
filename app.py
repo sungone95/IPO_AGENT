@@ -1,41 +1,93 @@
 import streamlit as st
-import time
+from google import genai
+from google.genai import types
 
-# 1. 웹 브라우저 탭 이름과 아이콘 설정
-st.set_page_config(page_title="공모주 청약 Agent", page_icon="📈")
+# 1. 페이지 설정
+st.set_page_config(page_title="공모주 청약 Agent", page_icon="📈", layout="wide")
 
-# 2. 메인 화면 제목
+# 2. Gemini API 클라이언트 초기화 (Secrets에서 키를 자동으로 가져옴)
+try:
+    api_key = st.secrets["GEMINI_API_KEY"]
+    client = genai.Client(api_key=api_key)
+except Exception:
+    st.error("⚠️ GEMINI_API_KEY가 설정되지 않았습니다. Streamlit Settings > Secrets를 확인해 주세요.")
+    st.stop()
+
+# 3. 사이드바 (공모주 일정 브리핑용 간이 화면)
+with st.sidebar:
+    st.header("📌 이달의 주요 공모주")
+    st.info("💡 **팁**: 아래 종목명을 클릭하여 Agent에게 바로 질문해 보세요.")
+    
+    # 클릭 시 대화창에 자동으로 입력해 주는 버튼들
+    if st.button("케이뱅크 청약 일정 알려줘"):
+        st.session_state.prompt_input = "케이뱅크 청약 일정과 주관사 알려줘"
+    if st.button("이번 주 공모주 추천해줘"):
+        st.session_state.prompt_input = "이번 주 청약 예정인 주요 공모주 분석해줘"
+
+# 4. 메인 타이틀
 st.title("📈 공모주 청약 안내 & 분석 Agent")
-st.caption("공모주 일정부터 기업 분석, 청약 전략까지 한눈에 확인하세요.")
+st.caption("AI 기반 공모주 분석기 | 기업 개요, 공모가, 주관사, 청약 전략까지 안내합니다.")
 
-# 3. 대화 기록 저장소 만들기 (새로고침해도 대화가 안 날아가게 함)
+# 5. 대화 기록 초기화
 if "messages" not in st.session_state:
     st.session_state.messages = [
-        {"role": "assistant", "content": "안녕하세요! 공모주 청약 Agent입니다. 궁금하신 공모주 종목이나 일정을 물어보세요."}
+        {"role": "assistant", "content": "안녕하세요! 공모주 청약 분석 Agent입니다. 궁금하신 종목이나 청약 관련 질문을 자유롭게 해주세요!"}
     ]
 
-# 4. 기존 대화 내용 화면에 표시하기
+# 6. 이전 대화 화면 출력
 for msg in st.session_state.messages:
     st.chat_message(msg["role"]).write(msg["content"])
 
-# 5. 사용자 질문 입력창
-if user_input := st.chat_input("예: 이번 주 청약 가능한 공모주 알려줘"):
-    # 유저가 입력한 글을 화면에 띄우고 저장
-    st.session_state.messages.append({"role": "user", "content": user_input})
-    st.chat_message("user").write(user_input)
+# 사이드바 버튼 클릭 처리용
+user_query = st.chat_input("예: 케이뱅크 공모가랑 상장일 알려줘")
+if "prompt_input" in st.session_state and st.session_state.prompt_input:
+    user_query = st.session_state.prompt_input
+    del st.session_state.prompt_input
 
-    # 6. 에이전트 답변 생성 (가짜 테스트 로직 -> 나중에 진짜 AI 연결할 곳)
+# 7. 질문 입력 시 Gemini AI 호출 및 스트리밍 답변
+if user_query:
+    # 사용자 메시지 표시
+    st.session_state.messages.append({"role": "user", "content": user_query})
+    st.chat_message("user").write(user_query)
+
+    # Agent 답변 처리
     with st.chat_message("assistant"):
         response_placeholder = st.empty()
+        full_response = ""
+
+        # 공모주 전문 분석가 페르소나 설정
+        system_instruction = """
+        너는 대한민국 공모주 청약 전문 분석 에이전트야.
+        사용자가 공모주 종목이나 청약에 대해 물어보면 친절하고 전문적으로 답변해줘.
         
-        # 실제 답변을 만드는 것처럼 보이게 애니메이션 효과
-        with st.spinner("공모주 데이터를 분석 중입니다..."):
-            time.sleep(1) # 1초 대기
+        답변할 때는 아래 구성을 권장해:
+        1. 핵심 요약 (청약일, 공모가, 주관사 등)
+        2. 기업 개요 및 관전 포인트
+        3. 청약 전략 및 주의사항 (비등/균등 배정 팁)
+        
+        모르는 정보가 있거나 실시간 조회가 필요할 땐 정중하게 안내해줘.
+        """
+
+        try:
+            # Gemini 모델 호출 (실시간 스트리밍 답변)
+            response = client.models.generate_content_stream(
+                model="gemini-2.5-flash",
+                contents=user_query,
+                config=types.GenerateContentConfig(
+                    system_instruction=system_instruction,
+                    temperature=0.3,
+                )
+            )
+
+            for chunk in response:
+                full_response += chunk.text
+                response_placeholder.markdown(full_response + "▌")
             
-            # 테스트용 예시 답변
-            bot_reply = f"🤖 **[분석 결과]**\n\n'**{user_input}**'에 대한 공모주 정보입니다.\n- **추천 청약 여부**: 적극 참여\n- **주관사**: KB증권, NH투자증권\n- **공모가**: 15,000원\n\n*(현재 기본 틀 테스트 중이며, 6시간 내에 실제 AI 및 데이터가 연결될 예정입니다!)*"
+            response_placeholder.markdown(full_response)
             
-            response_placeholder.markdown(bot_reply)
-            
-        # 답변을 저장소에 기록
-        st.session_state.messages.append({"role": "assistant", "content": bot_reply})
+        except Exception as e:
+            full_response = f"❌ 오류가 발생했습니다: {str(e)}"
+            response_placeholder.markdown(full_response)
+
+        # 답변 저장
+        st.session_state.messages.append({"role": "assistant", "content": full_response})
