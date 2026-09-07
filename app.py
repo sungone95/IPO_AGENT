@@ -68,10 +68,10 @@ if user_query:
         3. 청약 전략 및 주의사항 (비등/균등 배정 팁)
         """
 
-        # 1차 시도: 구글 실시간 검색 Grounding이 포함된 gemini-2.5-flash
+        # 1차 시도: 구글 실시간 검색 Grounding이 포함된 gemini-3.6-flash
         try:
             response = client.models.generate_content_stream(
-                model="gemini-2.5-flash",
+                model="gemini-3.6-flash",
                 contents=user_query,
                 config=types.GenerateContentConfig(
                     system_instruction=system_instruction,
@@ -88,10 +88,10 @@ if user_query:
             response_placeholder.markdown(full_response)
 
         except Exception as e:
-            # 2차 시도 (백업): 기본 고속 모델 gemini-2.0-flash
+            # 2차 시도 (백업): 웹 검색 옵션을 제외한 기본 gemini-3.6-flash
             try:
                 response = client.models.generate_content_stream(
-                    model="gemini-2.0-flash",
+                    model="gemini-3.6-flash",
                     contents=user_query,
                     config=types.GenerateContentConfig(
                         system_instruction=system_instruction,
