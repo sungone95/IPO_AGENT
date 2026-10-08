@@ -48,7 +48,7 @@ def analyze_user_portfolio_strategy_with_ai(client: genai.Client, user_id: str, 
     
     prompt = f"""
     당신은 {user_name} 고객만을 위한 맞춤형 공모주 투자 컨설턴트입니다.
-    고객의 과거 매매 패턴, 최근 시장/산업 동향, 청약 종목 정보를 종합 분석하여 맞춤형 진단을 작성하세요.
+    고객의 과거 매매 패턴, 최근 시장/산업 동향, 청약 종목 정보 및 기관 투자자 수치를 종합 분석하여 맞춤형 진단을 작성하세요.
 
     [1. 고객 정보]
     - 고객명: {user_name}
@@ -59,19 +59,21 @@ def analyze_user_portfolio_strategy_with_ai(client: genai.Client, user_id: str, 
     [2. 최근 시장 동향]
     - 관련 산업군 동향: {json.dumps(market_data['sector_trends'], ensure_ascii=False)}
 
-    [3. 청약 대상 공모주 정보 및 객관적 지표]
+    [3. 청약 대상 공모주 정보 및 수치 지표]
     - 기업명: {company_info.get('company_name')}
     - 속한 산업군: {company_info.get('sector', '일반')}
     - 주요 사업 요약: {company_info.get('business_summary', '정보 없음')}
     - 주요 객관적 수치 성과: {company_info.get('metrics_info', '정보 없음')}
     - 확정 공모가: {company_info.get('offering_price', 0):,}원
-    - 기관 수요예측 경쟁률: {company_info.get('competition_rate', 0)}:1
+    - 기관 경쟁률: {company_info.get('competition_rate', 0)}:1
+    - 기관 의무보유확약 비율: {company_info.get('lockup_rate', 0)}%
 
     다음 규격에 맞는 JSON 형식만 출력하세요:
     {{
         "user_name": "{user_name}",
         "recommendation": "청약 적극 추천" | "신중 청약" | "청약 보류",
-        "company_simple_summary": "초등학생도 이해하기 쉬운 2줄 이내 요약. 반드시 '국내 점유율 O위', '시장 점유율 O%', '매출 성장률 O%' 등 객관적 수치 지표를 자연스럽게 포함하여 간결하게 작성하세요.",
+        "company_simple_summary": "초등학생도 이해하기 쉬운 2줄 이내 요약. 반드시 객관적 수치 지표(점유율 등)를 포함하세요.",
+        "institutional_explanation": "기관 경쟁률({company_info.get('competition_rate')}:1)과 의무보유확약 비율({company_info.get('lockup_rate')}%)이 의미하는 바를 초등학생도 알기 쉽게 설명하세요. (예: 전문가 몇 명이 줄을 섰고, 이 주식을 바로 안 팔고 얼마나 오래 갖고 있겠다고 약속했는지 비유하여 2~3문장 작성)",
         "personal_reason": "{user_name} 고객님의 과거 {company_info.get('sector')} 산업 매매 성공률(win_rate), 보유기간, 위험성향 데이터를 근거로 왜 추천/비추천하는지 2~3문장으로 명확히 설명",
         "strategy_type": "비례 + 균등 배정" | "균등 배정 전용" | "청약 패스",
         "sell_guide": "{user_name} 고객의 해당 산업군 평균 보유일수와 시장 수급을 반영한 매도 전략 1~2문장"
@@ -95,6 +97,7 @@ def analyze_user_portfolio_strategy_with_ai(client: genai.Client, user_id: str, 
             "user_name": user_name,
             "recommendation": "분석 오류",
             "company_simple_summary": "기업 정보를 불러오는 중 오류가 발생했습니다.",
+            "institutional_explanation": "기관 투자자 수치를 분석 중 오류가 발생했습니다.",
             "personal_reason": f"오류 원인: {str(e)}",
             "strategy_type": "보류",
             "sell_guide": "기본 가이드를 참고하세요."
