@@ -1,6 +1,5 @@
 import streamlit as st
 from config import get_gemini_client, DEFAULT_GEMINI_MODEL
-from tools.get_data_tool import get_company_dict
 from tools.portfolio_tool import analyze_user_portfolio_strategy_with_ai
 
 # 1. 페이지 기본 설정 및 Client 초기화
@@ -12,18 +11,70 @@ st.set_page_config(
 
 client = get_gemini_client()
 
-# 2. 대화 기록 초기화
+# 2. Mock 데이터: 청약 임박 공모주 종목 리스트
+UPCOMING_IPOS = {
+    "바이오큐어": {
+        "company_name": "바이오큐어",
+        "sector": "바이오/제약",
+        "offering_price": 28000,
+        "competition_rate": 1420,
+        "underwriter": "한국투자증권",
+        "d_day": "D-1 (청약 마감 임박)"
+    },
+    "클라우드원": {
+        "company_name": "클라우드원",
+        "sector": "IT/SaaS",
+        "offering_price": 15000,
+        "competition_rate": 890,
+        "underwriter": "NH투자증권",
+        "d_day": "D-2"
+    },
+    "에코에너지": {
+        "company_name": "에코에너지",
+        "sector": "2차전지/소재",
+        "offering_price": 42000,
+        "competition_rate": 350,
+        "underwriter": "미래에셋증권",
+        "d_day": "D-3"
+    }
+}
+
+# 3. 대화 기록 초기화
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# 3. 데이터 로드 (예시 종목 지정)
-company_info = get_company_dict()  # 기본 조회 기업 데이터
-
-# --- 상단 타이틀 및 모드 선택 (Segmented Control / Radio) ---
+# --- 🎯 1단계: 첫 화면 종목 선택 (Selectbox & Cards) ---
 st.title("📈 IPO AI 투자 컨설턴트")
-st.caption(f"대상 종목: **{company_info.get('company_name', '종목명')}** | 현재 적용 모델: `{DEFAULT_GEMINI_MODEL}`")
+st.markdown("현재 청약 진행 및 임박한 공모주 목록입니다. **분석할 종목을 선택해 주세요.**")
 
-# 2가지 모드 선택 화면 (버튼 스타일 radio)
+# 상단 종목 선택 셀렉트박스
+selected_company_name = st.selectbox(
+    "🔥 청약 임박 공모주 선택:",
+    options=list(UPCOMING_IPOS.keys()),
+    index=0
+)
+
+# 선택된 종목 객체 세팅
+company_info = UPCOMING_IPOS[selected_company_name]
+
+# 종목 변경 시 기존 AI 분석 결과 / 대화 내용 초기화 체크
+if "last_selected_company" not in st.session_state or st.session_state["last_selected_company"] != selected_company_name:
+    st.session_state["last_selected_company"] = selected_company_name
+    st.session_state["report_data"] = None
+    st.session_state.messages = []  # 이전 종목 대화 내용 초기화
+
+# 선택된 종목 요약 뱃지 표시
+st.info(
+    f"📌 **선택 종목:** {company_info['company_name']} | "
+    f"**산업:** {company_info['sector']} | "
+    f"**공모가:** {company_info['offering_price']:,}원 | "
+    f"**기관경쟁률:** {company_info['competition_rate']}:1 | "
+    f"**일정:** {company_info['d_day']}"
+)
+
+st.divider()
+
+# --- 🎯 2단계: 분석 방식 선택 (리포트 vs 챗봇) ---
 view_mode = st.radio(
     "원하시는 서비스를 선택하세요:",
     options=["1. 📊 한눈에 보는 AI 요약 리포트", "2. 💬 AI 챗봇 1:1 질의응답"],
@@ -37,14 +88,14 @@ st.divider()
 # SECTON 1: 최종 시각화 요약 장표
 # ==========================================
 if view_mode == "1. 📊 한눈에 보는 AI 요약 리포트":
-    st.subheader("📊 AI 종합 투자 진단 리포트")
+    st.subheader(f"📊 {company_info['company_name']} AI 종합 투자 진단 리포트")
     
     # 리포트 생성 버튼 / 자동 로딩
     if st.button("🔄 리포트 새로고침 / AI 분석 실행", type="primary"):
         st.session_state["report_data"] = None
 
     if "report_data" not in st.session_state or st.session_state["report_data"] is None:
-        with st.spinner("AI가 유저 데이터와 시장 동향을 분석 중입니다..."):
+        with st.spinner(f"{company_info['company_name']} 데이터를 바탕으로 AI가 진단 중입니다..."):
             st.session_state["report_data"] = analyze_user_portfolio_strategy_with_ai(
                 client=client,
                 user_id="user123",
@@ -86,70 +137,4 @@ if view_mode == "1. 📊 한눈에 보는 AI 요약 리포트":
 
         st.markdown("---")
         st.markdown("#### 🎯 전략 및 매도 가이드")
-        st.write(f"**배정 전략:** {report.get('strategy_desc', '-')}")
-        st.write(f"**매도 시점 가이드:** {report.get('sell_guide', '-')}")
-
-    with c_right:
-        st.markdown("#### 📋 기업 기본 & 공모 정보")
-        st.write(f"- **기업명:** {company_info.get('company_name', '-')}")
-        st.write(f"- **산업군:** {company_info.get('sector', '일반')}")
-        st.write(f"- **확정 공모가:** {company_info.get('offering_price', 0):,}원")
-        st.write(f"- **기관 경쟁률:** {company_info.get('competition_rate', 0)} : 1")
-        st.write(f"- **주관사:** {company_info.get('underwriter', '-')}")
-
-        st.markdown("---")
-        st.markdown("#### 🌐 최근 공모주 및 산업군 동향")
-        st.info("최근 공모주 시장은 **바이오/제약 테마 수급 폭주** 및 상장 당일 변동성 확대 양상을 보이고 있습니다.")
-
-# ==========================================
-# SECTION 2: 챗봇 형태 질의응답 (기존 화면)
-# ==========================================
-else:
-    st.subheader(f"💬 {company_info.get('company_name', '종목')} AI Q&A 대화창")
-    st.caption("공모주 청약, 기업 재무, 사업 모델 등 궁금한 점을 자유롭게 질문해보세요.")
-
-    # 기존 대화 내역 출력
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
-
-    # 사용자 질문 입력
-    if user_query := st.chat_input("질문을 입력하세요 (예: 이 기업의 주요 매출원은 뭐야?):"):
-        # 유저 메시지 저장 및 표시
-        st.session_state.messages.append({"role": "user", "content": user_query})
-        with st.chat_message("user"):
-            st.markdown(user_query)
-
-        # AI 프롬프트 구성 (기업 정보 문맥 포함)
-        system_instruction = f"""
-        당신은 공모주 투자 전문 AI 챗봇입니다.
-        현재 상담 대상 종목 정보:
-        - 기업명: {company_info.get('company_name')}
-        - 산업군: {company_info.get('sector')}
-        - 확정 공모가: {company_info.get('offering_price')}원
-        
-        사용자의 질문에 친절하고 정확하게 답변해주세요.
-        """
-
-        # Gemini 스트리밍 응답 출력
-        with st.chat_message("assistant"):
-            response_placeholder = st.empty()
-            full_response = ""
-
-            try:
-                response = client.models.generate_content_stream(
-                    model=DEFAULT_GEMINI_MODEL,
-                    contents=user_query,
-                    config={"temperature": 0.3}
-                )
-
-                for chunk in response:
-                    if chunk.text:
-                        full_response += chunk.text
-                        response_placeholder.markdown(full_response + "▌")
-
-                response_placeholder.markdown(full_response)
-                st.session_state.messages.append({"role": "assistant", "content": full_response})
-
-            except Exception as e:
-                st.error(f"답변 생성 중 오류가 발생했습니다: {str(e)}")
+        st.
