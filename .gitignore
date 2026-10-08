@@ -1,0 +1,12 @@
+# Python & 가상환경
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Streamlit 설정 및 보안 키
+.streamlit/secrets.toml
+
+# DB 파일 (개발용 로컬 DB)
+*.db
+*.sqlite3
