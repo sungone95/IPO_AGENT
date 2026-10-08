@@ -2,7 +2,7 @@ import streamlit as st
 from google import genai
 
 # 모델을 바꾸고 싶을 때는 이 값만 변경
-DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
+DEFAULT_GEMINI_MODEL = "gemini-3.8-flash"
 
 def get_gemini_client() -> genai.Client:
     """
