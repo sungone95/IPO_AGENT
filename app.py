@@ -82,7 +82,7 @@ if user_query:
         try:
             # Gemini 모델 스트리밍 응답 호출
             response = client.models.generate_content_stream(
-                model="gemini-1.5-flash",
+                model="gemini-3.8-flash",
                 contents=user_query,
                 config=types.GenerateContentConfig(
                     system_instruction=system_instruction,
