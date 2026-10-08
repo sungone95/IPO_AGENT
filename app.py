@@ -43,7 +43,7 @@ UPCOMING_IPOS = {
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# --- 🎯 1단계: 첫 화면 종목 선택 (Selectbox & Cards) ---
+# --- 🎯 1단계: 첫 화면 종목 선택 ---
 st.title("📈 IPO AI 투자 컨설턴트")
 st.markdown("현재 청약 진행 및 임박한 공모주 목록입니다. **분석할 종목을 선택해 주세요.**")
 
@@ -85,7 +85,7 @@ view_mode = st.radio(
 st.divider()
 
 # ==========================================
-# SECTON 1: 최종 시각화 요약 장표
+# SECTION 1: 최종 시각화 요약 장표
 # ==========================================
 if view_mode == "1. 📊 한눈에 보는 AI 요약 리포트":
     st.subheader(f"📊 {company_info['company_name']} AI 종합 투자 진단 리포트")
@@ -137,4 +137,72 @@ if view_mode == "1. 📊 한눈에 보는 AI 요약 리포트":
 
         st.markdown("---")
         st.markdown("#### 🎯 전략 및 매도 가이드")
-        st.
+        st.write(f"**배정 전략:** {report.get('strategy_desc', '-')}")
+        st.write(f"**매도 시점 가이드:** {report.get('sell_guide', '-')}")
+
+    with c_right:
+        st.markdown("#### 📋 기업 기본 & 공모 정보")
+        st.write(f"- **기업명:** {company_info['company_name']}")
+        st.write(f"- **산업군:** {company_info['sector']}")
+        st.write(f"- **확정 공모가:** {company_info['offering_price']:,}원")
+        st.write(f"- **기관 경쟁률:** {company_info['competition_rate']} : 1")
+        st.write(f"- **주관사:** {company_info['underwriter']}")
+
+        st.markdown("---")
+        st.markdown("#### 🌐 산업 및 시장 수급 동향")
+        st.caption(f"현재 **{company_info['sector']}** 테마 수급 현황 및 공모주 시장 분위기를 연동하여 분석했습니다.")
+
+# ==========================================
+# SECTION 2: 챗봇 형태 질의응답
+# ==========================================
+else:
+    st.subheader(f"💬 {company_info['company_name']} AI Q&A 대화창")
+    st.caption(f"선택하신 **{company_info['company_name']}** 공모주에 대해 궁금한 점을 자유롭게 질문해 주세요.")
+
+    # 기존 대화 내역 출력
+    for message in st.session_state.messages:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
+
+    # 사용자 질문 입력
+    if user_query := st.chat_input(f"{company_info['company_name']}에 대해 질문하세요 (예: 예상 수익률이나 청약할 만한 이유 알려줘):"):
+        # 유저 메시지 저장 및 표시
+        st.session_state.messages.append({"role": "user", "content": user_query})
+        with st.chat_message("user"):
+            st.markdown(user_query)
+
+        # AI 프롬프트 구성
+        system_instruction = f"""
+        당신은 공모주 투자 전문 AI 챗봇입니다.
+        현재 고객이 문의한 청약 대상 기업 데이터:
+        - 기업명: {company_info['company_name']}
+        - 산업군: {company_info['sector']}
+        - 확정 공모가: {company_info['offering_price']:,}원
+        - 기관 경쟁률: {company_info['competition_rate']}:1
+        - 주관사: {company_info['underwriter']}
+        
+        사용자의 질문에 친절하고 전문적으로 답변해 주세요.
+        """
+
+        # Gemini 스트리밍 응답 출력
+        with st.chat_message("assistant"):
+            response_placeholder = st.empty()
+            full_response = ""
+
+            try:
+                response = client.models.generate_content_stream(
+                    model=DEFAULT_GEMINI_MODEL,
+                    contents=f"{system_instruction}\n\n사용자 질문: {user_query}",
+                    config={"temperature": 0.3}
+                )
+
+                for chunk in response:
+                    if chunk.text:
+                        full_response += chunk.text
+                        response_placeholder.markdown(full_response + "▌")
+
+                response_placeholder.markdown(full_response)
+                st.session_state.messages.append({"role": "assistant", "content": full_response})
+
+            except Exception as e:
+                st.error(f"답변 생성 중 오류가 발생했습니다: {str(e)}")
