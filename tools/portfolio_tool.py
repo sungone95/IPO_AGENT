@@ -3,6 +3,10 @@ from typing import Dict, Any
 from google import genai
 from google.genai import types
 
+# 🎯 config.py에서 중앙 관리 모델 상수 불러오기
+from config import DEFAULT_GEMINI_MODEL
+
+
 def get_user_transaction_history(user_id: str) -> Dict[str, Any]:
     """[Mock] 고객 매매 기록 및 성향 자동 추출 (추후 DB 쿼리로 교체)"""
     return {
@@ -16,6 +20,7 @@ def get_user_transaction_history(user_id: str) -> Dict[str, Any]:
         ]
     }
 
+
 def get_market_trends() -> Dict[str, Any]:
     """[Mock] 최근 시장 분위기 및 산업 동향 추출 (추후 Crawling/DB 연동)"""
     return {
@@ -25,6 +30,7 @@ def get_market_trends() -> Dict[str, Any]:
             "IT/SaaS": "단기 실적 유무에 따라 상장일 변동성이 커지는 흐름"
         }
     }
+
 
 def analyze_user_portfolio_strategy_with_ai(client: genai.Client, user_id: str, company_info: Dict[str, Any]) -> Dict[str, Any]:
     """Gemini AI가 유저 매매내역 + 시장동향 + 종목정보를 종합 추론하여 JSON 생성"""
@@ -68,7 +74,7 @@ def analyze_user_portfolio_strategy_with_ai(client: genai.Client, user_id: str, 
 
     try:
         response = client.models.generate_content(
-            model = DEFAULT_GEMINI_MODEL,
+            model=DEFAULT_GEMINI_MODEL,  # 👈 config.py 단일 상수를 사용하여 자동 동기화
             contents=prompt,
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
