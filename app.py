@@ -6,14 +6,14 @@ from tools.portfolio_tool import analyze_user_portfolio_strategy_with_ai, get_ma
 
 # 1. 페이지 기본 설정 및 Client 초기화
 st.set_page_config(
-    page_title="IPO 투자 Agent",
+    page_title="IPO AI 투자 컨설턴트",
     page_icon="📈",
     layout="wide"
 )
 
 client = get_gemini_client()
 
-
+# 컴팩트 여백 스타일
 st.markdown("""
     <style>
     .block-container {padding-top: 1rem; padding-bottom: 1rem;}
@@ -21,21 +21,23 @@ st.markdown("""
     div[data-testid="stMetricValue"] {font-size: 1.15rem !important;}
     div[data-testid="stMetricLabel"] {font-size: 0.8rem !important;}
     h4 {margin-top: 0.1rem !important; margin-bottom: 0.3rem !important; font-size: 1.05rem !important;}
+    h5 {margin-top: 0.1rem !important; margin-bottom: 0.2rem !important; font-size: 0.95rem !important;}
     .stAlert {padding: 0.4rem 0.6rem !important;}
     </style>
 """, unsafe_allow_html=True)
 
-# 2. 수치 중심 Mock 데이터
+# 2. Mock 데이터 (업계 평균치 데이터 포함)
 UPCOMING_IPOS = {
     "바이오큐어": {
         "company_name": "바이오큐어",
         "sector": "바이오/제약",
-        "market_share": 42.0,        # 점유율 (%)
-        "market_rank": 1,            # 업계 순위
-        "revenue_growth": 128.0,     # 3년 매출 성장률 (%)
+        "market_share": 42.0,
+        "market_share_avg": 15.0,     # 업계 평균 점유율
+        "revenue_growth": 128.0,
+        "revenue_growth_avg": 35.0,   # 업계 평균 성장률
         "offering_price": 28000,
-        "competition_rate": 1420,    # 기관 경쟁률
-        "lockup_rate": 65.4,         # 의무보유확약 (%)
+        "competition_rate": 1420,
+        "lockup_rate": 65.4,
         "underwriter": "한국투자증권",
         "start_date": "2026-10-10",
         "d_day": "D-1"
@@ -44,8 +46,9 @@ UPCOMING_IPOS = {
         "company_name": "클라우드원",
         "sector": "IT/SaaS",
         "market_share": 35.0,
-        "market_rank": 1,
+        "market_share_avg": 12.0,
         "revenue_growth": 85.0,
+        "revenue_growth_avg": 28.0,
         "offering_price": 15000,
         "competition_rate": 890,
         "lockup_rate": 42.1,
@@ -57,8 +60,9 @@ UPCOMING_IPOS = {
         "company_name": "에코에너지",
         "sector": "2차전지/소재",
         "market_share": 18.5,
-        "market_rank": 3,
+        "market_share_avg": 20.0,
         "revenue_growth": 45.0,
+        "revenue_growth_avg": 40.0,
         "offering_price": 42000,
         "competition_rate": 350,
         "lockup_rate": 12.8,
@@ -71,8 +75,8 @@ UPCOMING_IPOS = {
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# --- 🎯 상단: 공모주 선택 카드 ---
-st.title("📈 IPO AI 투자 Agent")
+# --- 🎯 1단계: 상단 종목 선택 카드 ---
+st.title("📈 IPO AI 정량 투자 컨설턴트")
 
 with st.container(border=True):
     selected_company_name = st.radio(
@@ -91,10 +95,9 @@ if "last_selected_company" not in st.session_state or st.session_state["last_sel
     st.session_state["report_data"] = None
     st.session_state.messages = []
 
-# 서비스 모드 선택
 view_mode = st.radio(
     "서비스 선택:",
-    options=["1. 📊 시각화 리포트", "2. 💬 AI 챗봇 1:1 Q&A"],
+    options=["1. 📊 3초 비교 막대그래프 리포트", "2. 💬 AI 챗봇 1:1 Q&A"],
     horizontal=True,
     index=0
 )
@@ -102,13 +105,13 @@ view_mode = st.radio(
 st.divider()
 
 # ==========================================
-# SECTION 1: 시각화 리포트
+# SECTION 1: 3초 비교 막대그래프 리포트
 # ==========================================
-if view_mode == "1. 📊 시각화 리포트":
+if view_mode == "1. 📊 3초 비교 막대그래프 리포트":
     user_name = "김투린"
 
     if "report_data" not in st.session_state or st.session_state["report_data"] is None:
-        with st.spinner("정량 데이터 산출 중..."):
+        with st.spinner("평균 비교 데이터 산출 중..."):
             st.session_state["report_data"] = analyze_user_portfolio_strategy_with_ai(
                 client=client,
                 user_id="user123",
@@ -120,70 +123,60 @@ if view_mode == "1. 📊 시각화 리포트":
     strategy = report.get("strategy_type", "-")
 
     # ==========================================
-    # 1️⃣ [회사 수치 지표(좌) VS 기관 반응 수치 비교(우)]
+    # 1️⃣ [기업 지표 vs 평균] & [기관 지표 vs 평균] 막대그래프
     # ==========================================
     with st.container(border=True):
-        st.markdown(f"#### 1️⃣ 기업 지표 & 기관 수치 비교 (vs 시장 평균)")
+        st.markdown("#### 1️⃣ 핵심 지표 vs 시장·업계 평균 비교 막대그래프")
         
-        c_left, c_right = st.columns([1, 1], gap="small")
+        c_left, c_right = st.columns(2, gap="medium")
         
-        # 👈 [LEFT]: 기업 주요 객관적 수치
+        # 👈 [LEFT]: 기업 지표 (점유율 & 성장률) 막대그래프 비교
         with c_left:
-            st.markdown("##### 🏢 기업 정량 지표")
-            m1, m2, m3 = st.columns(3)
-            m1.metric("시장 순위", f"{company_info['market_rank']}위")
-            m2.metric("시장 점유율", f"{company_info['market_share']}%")
-            m3.metric("매출 성장률", f"+{company_info['revenue_growth']}%")
+            st.markdown("##### 🏢 기업 경쟁력 vs 업계 평균")
+            corp_compare_df = pd.DataFrame({
+                "시장점유율(%)": [company_info["market_share"], company_info["market_share_avg"]],
+                "매출성장률(%)": [company_info["revenue_growth"], company_info["revenue_growth_avg"]]
+            }, index=[company_info["company_name"], "업계 평균"])
             
-            st.caption("📈 점유율 & 매출 성장률 시각화")
-            st.progress(min(company_info['market_share'] / 100.0, 1.0))
-            st.progress(min(company_info['revenue_growth'] / 200.0, 1.0))
+            st.bar_chart(corp_compare_df, height=150)
+            st.caption(f"📊 점유율 **{company_info['market_share']}%** (평균 {company_info['market_share_avg']}%) | 성장률 **+{company_info['revenue_growth']}%** (평균 +{company_info['revenue_growth_avg']}%)")
 
-        # 👉 [RIGHT]: 기관 반응 수치 비교 (해당 종목 vs 시장 평균)
+        # 👉 [RIGHT]: 기관 반응 (경쟁률 & 의무보유확약) 막대그래프 비교
         with c_right:
-            st.markdown("##### 🏛️ 기관 수치 (vs 시장 평균)")
+            st.markdown("##### 🏛️ 기관 반응 vs 최근 공모주 평균")
             
-            comp_diff = company_info['competition_rate'] - market_data['avg_competition_rate']
-            lockup_diff = company_info['lockup_rate'] - market_data['avg_lockup_rate']
-
-            k1, k2 = st.columns(2)
-            k1.metric("기관 경쟁률", f"{company_info['competition_rate']}:1", delta=f"{comp_diff:+d}:1")
-            k2.metric("의무보유확약", f"{company_info['lockup_rate']}%", delta=f"{lockup_diff:+.1f}%p")
-
-            st.caption("📊 기관 경쟁률 (청색) vs 평균 (게이지)")
-            st.progress(min(company_info['competition_rate'] / 2000.0, 1.0))
-            st.caption("🔒 의무보유확약 (청색) vs 평균 (게이지)")
-            st.progress(min(company_info['lockup_rate'] / 100.0, 1.0))
+            inst_compare_df = pd.DataFrame({
+                "경쟁률(:1)": [company_info["competition_rate"], market_data["avg_competition_rate"]],
+                "의무보유확약(%)": [company_info["lockup_rate"], market_data["avg_lockup_rate"]]
+            }, index=[company_info["company_name"], "공모주 평균"])
+            
+            st.bar_chart(inst_compare_df, height=150)
+            st.caption(f"📊 경쟁률 **{company_info['competition_rate']}:1** (평균 {market_data['avg_competition_rate']}:1) | 락업 **{company_info['lockup_rate']}%** (평균 {market_data['avg_lockup_rate']}%)")
 
     # ==========================================
-    # 2️⃣ [맞춤 진단 수치화 - 줄글 배제]
+    # 2️⃣ 고객 맞춤 진단 (컴팩트 메트릭)
     # ==========================================
     with st.container(border=True):
         st.markdown(f"#### 2️⃣ {user_name} 고객 맞춤 정량 진단")
-        
         p1, p2, p3, p4 = st.columns(4)
         p1.metric("AI 진단 결과", rec)
-        p2.metric("추천 배정 전략", strategy)
+        p2.metric("추천 청약 전략", strategy)
         p3.metric("과거 동일섹터 승률", "83.3%", delta="+20.8%p")
         p4.metric("평균 보유 기간", "1.5일", delta="-12.5일")
-
-        st.caption(f"💡 정량 수치 요약: {report.get('quant_summary', '-')}")
 
     # ==========================================
     # 3️⃣ & 4️⃣ [현황 축소 + 상장 당일 수익률 및 주가 추이 예측]
     # ==========================================
-    st.markdown("#### 3️⃣ 시장 현황 & AI 주가/수익률 예측")
+    st.markdown("#### 3️⃣ 시장 동향 & AI 주가/수익률 예측")
     
     col_a, col_b, col_c = st.columns([1, 1, 1.2], gap="small")
 
-    # [현황 1: 최근 공모주 수익률 (컴팩트)]
     with col_a:
         with st.container(border=True):
             st.markdown("##### 📉 최근 IPO 수익률 (%)")
             ipo_df = pd.DataFrame(market_data["recent_ipo_performances"]).set_index("name")
             st.bar_chart(ipo_df["return_rate"], height=120)
 
-    # [현황 2: 최근 섹터 주가 추이 (컴팩트)]
     with col_b:
         with st.container(border=True):
             st.markdown(f"##### 📈 최근 {company_info['sector']} 지수")
@@ -191,19 +184,16 @@ if view_mode == "1. 📊 시각화 리포트":
             sector_trend = np.linspace(100, 125, 30) + np.random.normal(0, 2, 30)
             st.line_chart(pd.DataFrame({"지수": sector_trend}, index=dates), height=120)
 
-    # [🚀 핵심 시각화: 상장 당일 수익률 예측 + 30일 주가 추이 예측]
     with col_c:
         with st.container(border=True):
             st.markdown("##### 🚀 AI 상장 당일 수익률 & 주가 예측")
-            
             day1_ret = report.get("predicted_day1_return", 150.0)
             target_p = report.get("target_price", company_info['offering_price'] * 2.5)
             
             r1, r2 = st.columns(2)
-            r1.metric("상장 당일 예상 수익률", f"+{day1_ret:.0f}%", delta="과열 상한")
+            r1.metric("상장일 예상 수익률", f"+{day1_ret:.0f}%", delta="과열 상한")
             r2.metric("목표 주가", f"{int(target_p):,}원")
 
-            # 30일 주가 예측 시각화
             future_dates = pd.date_range(start=pd.Timestamp.now(), periods=30, freq='D')
             base_p = company_info['offering_price'] * (1 + day1_ret / 100.0)
             predicted_prices = base_p + np.cumsum(np.random.normal(50, 300, 30))
