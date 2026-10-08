@@ -1,9 +1,12 @@
 import streamlit as st
 from google import genai
 
+# 모델을 바꾸고 싶을 때는 이 값만 변경
+DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
+
 def get_gemini_client() -> genai.Client:
     """
-    Streamlit Secrets에서 GEMINI_API_KEY를 읽어와 SDK Client를 생성합니다.
+    Streamlit Secrets에서 GEMINI_API_KEY를 읽어와 SDK Client를 생성
     """
     try:
         api_key = st.secrets["GEMINI_API_KEY"]
