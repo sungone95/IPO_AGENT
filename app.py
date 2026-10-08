@@ -13,12 +13,13 @@ st.set_page_config(
 
 client = get_gemini_client()
 
-# 2. Mock 데이터: 청약 임박 공모주 종목 리스트
+# 2. Mock 데이터: 객관적 수치 정보(metrics_info) 추가
 UPCOMING_IPOS = {
     "바이오큐어": {
         "company_name": "바이오큐어",
         "sector": "바이오/제약",
         "business_summary": "암세포만 쏙 골라서 치료하는 신약을 개발하는 바이오 벤처 기업입니다.",
+        "metrics_info": "국내 췌장암 항체치료제 분야 점유율 1위 (국내 시장 42% 점유), 최근 3년 매출 성장률 128%",
         "offering_price": 28000,
         "competition_rate": 1420,
         "underwriter": "한국투자증권",
@@ -29,6 +30,7 @@ UPCOMING_IPOS = {
         "company_name": "클라우드원",
         "sector": "IT/SaaS",
         "business_summary": "기업들이 컴퓨터 데이터를 안전하게 보관하고 관리해주는 소프트웨어를 만듭니다.",
+        "metrics_info": "국내 공공기관 B2B 클라우드 데이터 관리 분야 1위, 국내 시장 점유율 35%",
         "offering_price": 15000,
         "competition_rate": 890,
         "underwriter": "NH투자증권",
@@ -39,6 +41,7 @@ UPCOMING_IPOS = {
         "company_name": "에코에너지",
         "sector": "2차전지/소재",
         "business_summary": "전기차가 더 오랫동안 달릴 수 있도록 배터리 핵심 부품을 만드는 회사입니다.",
+        "metrics_info": "세계 3위 규모의 전해액 첨가제 생산 기술 보유, 글로벌 완성차 납품 비중 25%",
         "offering_price": 42000,
         "competition_rate": 350,
         "underwriter": "미래에셋증권",
@@ -54,11 +57,9 @@ if "messages" not in st.session_state:
 # --- 🎯 1단계: 첫 화면 - 강조된 종목 선택 섹션 ---
 st.title("📈 IPO AI 투자 컨설턴트")
 
-# 시각적으로 강하게 눈에 띄는 선택 상자 카드
 with st.container(border=True):
     st.markdown("### 🔥 **[필수 선택] 분석할 공모주를 먼저 클릭하세요!**")
     
-    # 세련된 라디오 버튼 방식의 선택지
     selected_company_name = st.radio(
         "청약 임박 종목 목록:",
         options=list(UPCOMING_IPOS.keys()),
@@ -86,7 +87,7 @@ st.success(
 
 st.markdown("---")
 
-# --- 🎯 2단계: 서비스 선택 (리포트 vs 챗봇) ---
+# --- 🎯 2단계: 서비스 선택 ---
 view_mode = st.radio(
     "원하시는 서비스를 선택하세요:",
     options=["1. 📊 고객 맞춤 AI 요약 리포트", "2. 💬 AI 챗봇 1:1 질의응답"],
@@ -100,7 +101,7 @@ st.divider()
 # SECTION 1: 개인화 시각화 요약 리포트
 # ==========================================
 if view_mode == "1. 📊 고객 맞춤 AI 요약 리포트":
-    user_name = "김투린"  # 고객 이름
+    user_name = "김투린"
     st.subheader(f"📊 {user_name} 고객님만을 위한 [{company_info['company_name']}] 종합 투자 진단")
 
     if st.button("🔄 리포트 새로고침 / AI 재분석", type="primary"):
@@ -116,34 +117,39 @@ if view_mode == "1. 📊 고객 맞춤 AI 요약 리포트":
 
     report = st.session_state["report_data"]
 
-    # [상단 개인화 메트릭 요약]
+    # [상단 컴팩트 메트릭 요약]
     c1, c2 = st.columns(2)
     with c1:
         with st.container(border=True):
             rec = report.get("recommendation", "N/A")
             st.caption(f"👤 {user_name} 고객님 맞춤 AI 추천")
             if "적극" in rec:
-                st.success(f"### 🎯 {rec}")
+                st.markdown(f"<h4 style='margin:0; color:#2e7d32;'>🎯 {rec}</h4>", unsafe_allow_html=True)
             elif "신중" in rec:
-                st.warning(f"### ⚠️ {rec}")
+                st.markdown(f"<h4 style='margin:0; color:#ed6c02;'>⚠️ {rec}</h4>", unsafe_allow_html=True)
             else:
-                st.error(f"### ⛔ {rec}")
+                st.markdown(f"<h4 style='margin:0; color:#d32f2f;'>⛔ {rec}</h4>", unsafe_allow_html=True)
 
     with c2:
         with st.container(border=True):
             st.caption("💡 추천 청약 및 배정 전략")
-            st.info(f"### {report.get('strategy_type', '-')}")
+            st.markdown(f"<h4 style='margin:0; color:#0288d1;'>{report.get('strategy_type', '-')}</h4>", unsafe_allow_html=True)
 
     st.markdown("###")
 
-    # [섹션 1. 종목 분석 (초등학생 수준 2줄 이내 요약)]
+    # [1️⃣ 종목 분석 (객관적 수치 지표 + 간결 2줄 요약)]
     with st.container(border=True):
         st.markdown(f"#### 1️⃣ 종목 분석: **{company_info['company_name']}**은 어떤 회사인가요?")
+        
+        # 객관적 핵심 지표 뱃지
+        st.caption(f"🏆 **핵심 시장 지표:** {company_info.get('metrics_info', '-')}")
+        
+        # AI 초등학생 수준 2줄 쉬운 설명
         st.info(f"💡 {report.get('company_simple_summary', company_info['business_summary'])}")
 
     st.markdown("###")
 
-    # [섹션 2. 왜 추천/비추천하는지 (고객 보유 종목 및 매매 패턴 근거)]
+    # [2️⃣ 고객 맞춤 추천/비추천 사유]
     with st.container(border=True):
         st.markdown(f"#### 2️⃣ {user_name} 고객님 맞춤 진단: 왜 이 추천이 나왔을까요?")
         st.markdown(f"**📌 과거 매매 패턴 기반 분석:**")
@@ -152,15 +158,13 @@ if view_mode == "1. 📊 고객 맞춤 AI 요약 리포트":
 
     st.markdown("###")
 
-    # [섹션 3 & 4. 시각화 영역]
+    # [3️⃣ & 4️⃣ 시각화 영역]
     col_left, col_right = st.columns(2)
 
     with col_left:
         with st.container(border=True):
             st.markdown("#### 3️⃣ 최근 1달간 IPO 종목 상장일 수익률 (%)")
             market_data = get_market_trends()
-            
-            # 상장일 수익률 차트 데이터 생성
             ipo_df = pd.DataFrame(market_data["recent_ipo_performances"]).set_index("name")
             st.bar_chart(ipo_df["return_rate"])
             st.caption(" 최근 1달 공모주 시장 상장 당일 평균 수익률은 **+140%** 수준으로 매우 과열 상태입니다.")
@@ -168,11 +172,8 @@ if view_mode == "1. 📊 고객 맞춤 AI 요약 리포트":
     with col_right:
         with st.container(border=True):
             st.markdown(f"#### 4️⃣ 최근 3달간 [{company_info['sector']}] 산업군 주가 추이")
-            
-            # 최근 3달 모의 주가 추이 데이터 생성
             dates = pd.date_range(end=pd.Timestamp.now(), periods=90, freq='D')
             
-            # Sector별 가상 주가 흐름
             if company_info['sector'] == "바이오/제약":
                 trend = np.linspace(100, 145, 90) + np.random.normal(0, 3, 90)
             elif company_info['sector'] == "IT/SaaS":
@@ -206,6 +207,7 @@ else:
         현재 문의 종목 정보:
         - 기업명: {company_info['company_name']}
         - 산업군: {company_info['sector']}
+        - 핵심 경쟁력: {company_info.get('metrics_info', '-')}
         - 확정 공모가: {company_info['offering_price']:,}원
         - 기관 경쟁률: {company_info['competition_rate']}:1
         - 주관사: {company_info['underwriter']}
