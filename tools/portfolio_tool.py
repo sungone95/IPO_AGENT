@@ -68,7 +68,7 @@ def analyze_user_portfolio_strategy_with_ai(client: genai.Client, user_id: str, 
 
     try:
         response = client.models.generate_content(
-            model="gemini-2.5-flash",
+            model = DEFAULT_GEMINI_MODEL,
             contents=prompt,
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
