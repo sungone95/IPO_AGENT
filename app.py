@@ -7,7 +7,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 import streamlit as st
 from google.genai import types
 
-from config import get_gemini_client
+from config import get_gemini_client, DEFAULT_GEMINI_MODEL
 
 # tools/__init__.py (Option A) 덕분에 한 번에 깔끔하게 import 가능
 from tools import (
@@ -82,7 +82,7 @@ if user_query:
         try:
             # Gemini 모델 스트리밍 응답 호출
             response = client.models.generate_content_stream(
-                model="gemini-3.8-flash",
+                model=DEFAULT_GEMINI_MODEL,
                 contents=user_query,
                 config=types.GenerateContentConfig(
                     system_instruction=system_instruction,
