@@ -11,7 +11,7 @@ st.set_page_config(
 
 client = get_gemini_client()
 
-# 2. Mock 데이터: 청약 임박 공모주 종목 리스트
+# 2. Mock 데이터: 청약 임박 공모주 종목 리스트 (청약시작일자 및 D-Day 추가)
 UPCOMING_IPOS = {
     "바이오큐어": {
         "company_name": "바이오큐어",
@@ -19,6 +19,7 @@ UPCOMING_IPOS = {
         "offering_price": 28000,
         "competition_rate": 1420,
         "underwriter": "한국투자증권",
+        "start_date": "2026-10-10",
         "d_day": "D-1 (청약 마감 임박)"
     },
     "클라우드원": {
@@ -27,7 +28,8 @@ UPCOMING_IPOS = {
         "offering_price": 15000,
         "competition_rate": 890,
         "underwriter": "NH투자증권",
-        "d_day": "D-2"
+        "start_date": "2026-10-12",
+        "d_day": "D-3"
     },
     "에코에너지": {
         "company_name": "에코에너지",
@@ -35,7 +37,8 @@ UPCOMING_IPOS = {
         "offering_price": 42000,
         "competition_rate": 350,
         "underwriter": "미래에셋증권",
-        "d_day": "D-3"
+        "start_date": "2026-10-15",
+        "d_day": "D-6"
     }
 }
 
@@ -43,14 +46,19 @@ UPCOMING_IPOS = {
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# --- 🎯 1단계: 첫 화면 종목 선택 ---
+# --- 🎯 1단계: 첫 화면 종목 선택 (청약시작일자 & D-Day 포함) ---
 st.title("📈 IPO AI 투자 컨설턴트")
 st.markdown("현재 청약 진행 및 임박한 공모주 목록입니다. **분석할 종목을 선택해 주세요.**")
 
-# 상단 종목 선택 셀렉트박스
+# 콤보박스에 표시될 라벨 포맷 함수 (종목명 | D-Day | 청약시작일)
+def format_ipo_option(company_key: str) -> str:
+    info = UPCOMING_IPOS[company_key]
+    return f"{info['company_name']} | [{info['d_day']}] 청약 시작일: {info['start_date']}"
+
 selected_company_name = st.selectbox(
     "🔥 청약 임박 공모주 선택:",
     options=list(UPCOMING_IPOS.keys()),
+    format_func=format_ipo_option,
     index=0
 )
 
@@ -63,13 +71,13 @@ if "last_selected_company" not in st.session_state or st.session_state["last_sel
     st.session_state["report_data"] = None
     st.session_state.messages = []  # 이전 종목 대화 내용 초기화
 
-# 선택된 종목 요약 뱃지 표시
+# 선택된 종목 상단 요약 바
 st.info(
     f"📌 **선택 종목:** {company_info['company_name']} | "
     f"**산업:** {company_info['sector']} | "
     f"**공모가:** {company_info['offering_price']:,}원 | "
     f"**기관경쟁률:** {company_info['competition_rate']}:1 | "
-    f"**일정:** {company_info['d_day']}"
+    f"**일정:** {company_info['start_date']} ({company_info['d_day']})"
 )
 
 st.divider()
@@ -103,54 +111,77 @@ if view_mode == "1. 📊 한눈에 보는 AI 요약 리포트":
             )
 
     report = st.session_state["report_data"]
+    score = int(report.get("score", 0))
 
-    # [상단 대시보드 메트릭 카드]
+    # [1. 상단 핵심 요약 대시보드 (KPI Cards & 게이지)]
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        rec = report.get("recommendation", "N/A")
-        if "적극" in rec:
-            st.success(f"### 🎯 AI 추천: {rec}")
-        elif "신중" in rec:
-            st.warning(f"### ⚠️ AI 추천: {rec}")
-        else:
-            st.error(f"### ⛔ AI 추천: {rec}")
+        with st.container(border=True):
+            rec = report.get("recommendation", "N/A")
+            st.caption("AI 투자 추천")
+            if "적극" in rec:
+                st.success(f"### 🎯 {rec}")
+            elif "신중" in rec:
+                st.warning(f"### ⚠️ {rec}")
+            else:
+                st.error(f"### ⛔ {rec}")
 
     with col2:
-        st.metric(
-            label="AI 종합 평가 점수",
-            value=f"{report.get('score', 0)}점 / 100점"
-        )
+        with st.container(border=True):
+            st.caption("AI 종합 평가 점수")
+            st.metric(label="", value=f"{score} / 100점")
+            # 점수 시각화 프로그레스 바
+            st.progress(min(score, 100) / 100)
 
     with col3:
-        st.info(f"💡 **추천 청약 전략**\n\n{report.get('strategy_type', '-')}")
+        with st.container(border=True):
+            st.caption("추천 배정 전략")
+            st.info(f"💡 **{report.get('strategy_type', '-')}**")
 
-    st.markdown("---")
+    st.markdown("###")
 
-    # [본문 상세 섹션]
+    # [2. 상세 분석 카드 영역]
     c_left, c_right = st.columns(2)
 
     with c_left:
-        st.markdown("#### 💡 AI 핵심 추천 근거")
-        for reason in report.get("reasons", []):
-            st.markdown(f"- {reason}")
+        with st.container(border=True):
+            st.markdown("#### 💡 AI 핵심 추천 근거")
+            reasons = report.get("reasons", [])
+            for idx, reason in enumerate(reasons, 1):
+                st.markdown(f"**{idx}.** {reason}")
 
-        st.markdown("---")
-        st.markdown("#### 🎯 전략 및 매도 가이드")
-        st.write(f"**배정 전략:** {report.get('strategy_desc', '-')}")
-        st.write(f"**매도 시점 가이드:** {report.get('sell_guide', '-')}")
+            st.divider()
+
+            st.markdown("#### 🎯 전략 및 매도 가이드")
+            st.markdown(f"**📌 배정 전략:** {report.get('strategy_desc', '-')}")
+            st.markdown(f"**📈 매도 시점 가이드:** {report.get('sell_guide', '-')}")
 
     with c_right:
-        st.markdown("#### 📋 기업 기본 & 공모 정보")
-        st.write(f"- **기업명:** {company_info['company_name']}")
-        st.write(f"- **산업군:** {company_info['sector']}")
-        st.write(f"- **확정 공모가:** {company_info['offering_price']:,}원")
-        st.write(f"- **기관 경쟁률:** {company_info['competition_rate']} : 1")
-        st.write(f"- **주관사:** {company_info['underwriter']}")
+        with st.container(border=True):
+            st.markdown("#### 📋 기업 기본 & 공모 주요 정보")
+            
+            # 메트릭 카드로 직관적 표시
+            m1, m2 = st.columns(2)
+            with m1:
+                st.metric(label="확정 공모가", value=f"{company_info['offering_price']:,} 원")
+            with m2:
+                st.metric(label="기관 경쟁률", value=f"{company_info['competition_rate']} : 1")
+                # 기관 경쟁률 게이지 (2000:1 기준)
+                comp_ratio = min(company_info['competition_rate'] / 2000, 1.0)
+                st.progress(comp_ratio)
 
-        st.markdown("---")
-        st.markdown("#### 🌐 산업 및 시장 수급 동향")
-        st.caption(f"현재 **{company_info['sector']}** 테마 수급 현황 및 공모주 시장 분위기를 연동하여 분석했습니다.")
+            st.markdown("---")
+            st.markdown(f"- **기업명:** `{company_info['company_name']}`")
+            st.markdown(f"- **산업군:** `{company_info['sector']}`")
+            st.markdown(f"- **주관사:** `{company_info['underwriter']}`")
+            st.markdown(f"- **청약 시작일:** `{company_info['start_date']}` (`{company_info['d_day']}`)")
+
+            st.divider()
+            
+            st.markdown("#### 🌐 최근 산업 & 시장 동향")
+            st.caption(f"현재 **[{company_info['sector']}]** 테마 수급 현황 및 공모주 시장 분위기")
+            st.warning("🔥 **시장 동향 summary:** 해당 섹터의 수급 집중 현상 및 최근 공모주 상장일 당일 변동성 확대를 고려하여 매도 가이드를 참고하세요.")
 
 # ==========================================
 # SECTION 2: 챗봇 형태 질의응답
@@ -180,6 +211,7 @@ else:
         - 확정 공모가: {company_info['offering_price']:,}원
         - 기관 경쟁률: {company_info['competition_rate']}:1
         - 주관사: {company_info['underwriter']}
+        - 청약 시작일: {company_info['start_date']} ({company_info['d_day']})
         
         사용자의 질문에 친절하고 전문적으로 답변해 주세요.
         """
