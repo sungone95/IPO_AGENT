@@ -13,7 +13,7 @@ st.set_page_config(
 
 client = get_gemini_client()
 
-# 2. Mock 데이터: 객관적 수치 정보(metrics_info) 추가
+# 2. Mock 데이터: 기관 수치 정보(competition_rate, lockup_rate) 보강
 UPCOMING_IPOS = {
     "바이오큐어": {
         "company_name": "바이오큐어",
@@ -22,6 +22,7 @@ UPCOMING_IPOS = {
         "metrics_info": "국내 췌장암 항체치료제 분야 점유율 1위 (국내 시장 42% 점유), 최근 3년 매출 성장률 128%",
         "offering_price": 28000,
         "competition_rate": 1420,
+        "lockup_rate": 65.4,  # 의무보유확약 비율 (%)
         "underwriter": "한국투자증권",
         "start_date": "2026-10-10",
         "d_day": "D-1 (청약 마감 임박)"
@@ -33,6 +34,7 @@ UPCOMING_IPOS = {
         "metrics_info": "국내 공공기관 B2B 클라우드 데이터 관리 분야 1위, 국내 시장 점유율 35%",
         "offering_price": 15000,
         "competition_rate": 890,
+        "lockup_rate": 42.1,
         "underwriter": "NH투자증권",
         "start_date": "2026-10-12",
         "d_day": "D-3"
@@ -44,6 +46,7 @@ UPCOMING_IPOS = {
         "metrics_info": "세계 3위 규모의 전해액 첨가제 생산 기술 보유, 글로벌 완성차 납품 비중 25%",
         "offering_price": 42000,
         "competition_rate": 350,
+        "lockup_rate": 12.8,
         "underwriter": "미래에셋증권",
         "start_date": "2026-10-15",
         "d_day": "D-6"
@@ -54,7 +57,7 @@ UPCOMING_IPOS = {
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# --- 🎯 1단계: 첫 화면 - 강조된 종목 선택 섹션 ---
+# --- 🎯 1단계: 첫 화면 - 종목 선택 섹션 ---
 st.title("📈 IPO AI 투자 컨설턴트")
 
 with st.container(border=True):
@@ -82,6 +85,7 @@ st.success(
     f"**산업:** {company_info['sector']} | "
     f"**공모가:** {company_info['offering_price']:,}원 | "
     f"**기관경쟁률:** {company_info['competition_rate']}:1 | "
+    f"**의무보유확약:** {company_info['lockup_rate']}% | "
     f"**일정:** {company_info['start_date']} ({company_info['d_day']})"
 )
 
@@ -116,42 +120,58 @@ if view_mode == "1. 📊 고객 맞춤 AI 요약 리포트":
             )
 
     report = st.session_state["report_data"]
+    rec = report.get("recommendation", "N/A")
+    strategy = report.get("strategy_type", "-")
 
-    # [상단 컴팩트 메트릭 요약]
-    c1, c2 = st.columns(2)
-    with c1:
-        with st.container(border=True):
-            rec = report.get("recommendation", "N/A")
-            st.caption(f"👤 {user_name} 고객님 맞춤 AI 추천")
-            if "적극" in rec:
-                st.markdown(f"<h4 style='margin:0; color:#2e7d32;'>🎯 {rec}</h4>", unsafe_allow_html=True)
-            elif "신중" in rec:
-                st.markdown(f"<h4 style='margin:0; color:#ed6c02;'>⚠️ {rec}</h4>", unsafe_allow_html=True)
-            else:
-                st.markdown(f"<h4 style='margin:0; color:#d32f2f;'>⛔ {rec}</h4>", unsafe_allow_html=True)
-
-    with c2:
-        with st.container(border=True):
-            st.caption("💡 추천 청약 및 배정 전략")
-            st.markdown(f"<h4 style='margin:0; color:#0288d1;'>{report.get('strategy_type', '-')}</h4>", unsafe_allow_html=True)
-
-    st.markdown("###")
-
-    # [1️⃣ 종목 분석 (객관적 수치 지표 + 간결 2줄 요약)]
+    # [1️⃣ 종목 분석 + 기관 수치 및 쉬운 설명]
     with st.container(border=True):
-        st.markdown(f"#### 1️⃣ 종목 분석: **{company_info['company_name']}**은 어떤 회사인가요?")
+        st.markdown(f"#### 1️⃣ 종목 및 기관 투자자 반응 분석: **{company_info['company_name']}**")
         
-        # 객관적 핵심 지표 뱃지
+        # 객관적 시장 지표
         st.caption(f"🏆 **핵심 시장 지표:** {company_info.get('metrics_info', '-')}")
-        
-        # AI 초등학생 수준 2줄 쉬운 설명
-        st.info(f"💡 {report.get('company_simple_summary', company_info['business_summary'])}")
+        st.info(f"💡 **어떤 회사인가요?** {report.get('company_simple_summary', company_info['business_summary'])}")
+
+        st.markdown("---")
+
+        # 🏛️ 기관 투자 수치 뱃지 및 초등학생 수준 해설
+        m1, m2 = st.columns(2)
+        with m1:
+            st.metric(
+                label="🏛️ 기관 수요예측 경쟁률", 
+                value=f"{company_info['competition_rate']:,} : 1",
+                help="주식 시장의 전문가(기관 투자자)들이 이 주식을 사겠다고 신청한 경쟁률입니다."
+            )
+        with m2:
+            st.metric(
+                label="🔒 기관 의무보유확약 (락업) 비율", 
+                value=f"{company_info['lockup_rate']} %",
+                help="상장하자마자 주식을 바로 팔지 않고 일정 기간 동안 꼭 쥐고 있겠다고 약속한 비율입니다."
+            )
+
+        # AI의 초등학생 눈높이 수치 풀이
+        inst_exp = report.get("institutional_explanation", f"기관 투자자 {company_info['competition_rate']}명이 주식을 가지려고 경쟁했으며, 이 중 {company_info['lockup_rate']}%는 상장 후 바로 팔지 않겠다고 약속했습니다.")
+        st.success(f"👦 **[쉬운 수치 풀이]** {inst_exp}")
 
     st.markdown("###")
 
     # [2️⃣ 고객 맞춤 추천/비추천 사유]
     with st.container(border=True):
         st.markdown(f"#### 2️⃣ {user_name} 고객님 맞춤 진단: 왜 이 추천이 나왔을까요?")
+        
+        col_rec1, col_rec2 = st.columns(2)
+        with col_rec1:
+            if "적극" in rec:
+                st.markdown(f"🎯 **AI 추천결과:** <span style='color:#2e7d32; font-weight:bold;'>{rec}</span>", unsafe_allow_html=True)
+            elif "신중" in rec:
+                st.markdown(f"⚠️ **AI 추천결과:** <span style='color:#ed6c02; font-weight:bold;'>{rec}</span>", unsafe_allow_html=True)
+            else:
+                st.markdown(f"⛔ **AI 추천결과:** <span style='color:#d32f2f; font-weight:bold;'>{rec}</span>", unsafe_allow_html=True)
+        
+        with col_rec2:
+            st.markdown(f"💡 **추천 청약 전략:** <span style='color:#0288d1; font-weight:bold;'>{strategy}</span>", unsafe_allow_html=True)
+
+        st.divider()
+
         st.markdown(f"**📌 과거 매매 패턴 기반 분석:**")
         st.write(report.get("personal_reason", "고객 매매 내역을 종합 분석 중입니다."))
         st.markdown(f"**📈 AI 매도 가이드:** {report.get('sell_guide', '-')}")
@@ -210,6 +230,7 @@ else:
         - 핵심 경쟁력: {company_info.get('metrics_info', '-')}
         - 확정 공모가: {company_info['offering_price']:,}원
         - 기관 경쟁률: {company_info['competition_rate']}:1
+        - 의무보유확약 비율: {company_info['lockup_rate']}%
         - 주관사: {company_info['underwriter']}
         
         {user_name} 고객님의 질문에 친절하고 전문적으로 답변해 주세요.
