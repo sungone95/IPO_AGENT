@@ -7,10 +7,10 @@ from config import DEFAULT_GEMINI_MODEL
 
 
 def get_user_transaction_history(user_id: str) -> Dict[str, Any]:
-    """[Mock] 고객 매매 기록 및 성향 자동 추출 (추후 DB 쿼리로 교체)"""
+    """[Mock] 고객 매매 기록 및 성향 자동 추출"""
     return {
         "user_id": user_id,
-        "user_name": "김투린",  # 고객 이름 추가
+        "user_name": "김투린",
         "risk_profile": "공격투자형",
         "total_capital": 50000000,
         "sector_holding_stats": [
@@ -59,10 +59,11 @@ def analyze_user_portfolio_strategy_with_ai(client: genai.Client, user_id: str, 
     [2. 최근 시장 동향]
     - 관련 산업군 동향: {json.dumps(market_data['sector_trends'], ensure_ascii=False)}
 
-    [3. 청약 대상 공모주 정보]
+    [3. 청약 대상 공모주 정보 및 객관적 지표]
     - 기업명: {company_info.get('company_name')}
     - 속한 산업군: {company_info.get('sector', '일반')}
     - 주요 사업 요약: {company_info.get('business_summary', '정보 없음')}
+    - 주요 객관적 수치 성과: {company_info.get('metrics_info', '정보 없음')}
     - 확정 공모가: {company_info.get('offering_price', 0):,}원
     - 기관 수요예측 경쟁률: {company_info.get('competition_rate', 0)}:1
 
@@ -70,7 +71,7 @@ def analyze_user_portfolio_strategy_with_ai(client: genai.Client, user_id: str, 
     {{
         "user_name": "{user_name}",
         "recommendation": "청약 적극 추천" | "신중 청약" | "청약 보류",
-        "company_simple_summary": "초등학생도 이해하기 쉽게, 이 기업이 하는 일과 시장 강점을 간결하게 딱 2줄 이내로 작성",
+        "company_simple_summary": "초등학생도 이해하기 쉬운 2줄 이내 요약. 반드시 '국내 점유율 O위', '시장 점유율 O%', '매출 성장률 O%' 등 객관적 수치 지표를 자연스럽게 포함하여 간결하게 작성하세요.",
         "personal_reason": "{user_name} 고객님의 과거 {company_info.get('sector')} 산업 매매 성공률(win_rate), 보유기간, 위험성향 데이터를 근거로 왜 추천/비추천하는지 2~3문장으로 명확히 설명",
         "strategy_type": "비례 + 균등 배정" | "균등 배정 전용" | "청약 패스",
         "sell_guide": "{user_name} 고객의 해당 산업군 평균 보유일수와 시장 수급을 반영한 매도 전략 1~2문장"
