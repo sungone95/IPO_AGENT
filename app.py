@@ -1,123 +1,155 @@
-import os
-import sys
-
-# 1. 파이썬 모듈 검색 경로에 프로젝트 루트 디렉터리 추가 (ImportError 방지)
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-
 import streamlit as st
-from google.genai import types
-
 from config import get_gemini_client, DEFAULT_GEMINI_MODEL
+from tools.get_data_tool import get_company_dict
+from tools.portfolio_tool import analyze_user_portfolio_strategy_with_ai
 
-# tools/__init__.py (Option A) 덕분에 한 번에 깔끔하게 import 가능
-from tools import (
-    sync_external_ipo_data,
-    get_ipo_info_from_db,
-    get_company_dict,
-    analyze_user_portfolio_strategy_with_ai,
-    render_ipo_summary_card
+# 1. 페이지 기본 설정 및 Client 초기화
+st.set_page_config(
+    page_title="IPO AI 투자 컨설턴트",
+    page_icon="📈",
+    layout="wide"
 )
 
-# 2. Page Config 및 Gemini Client 초기화
-st.set_page_config(page_title="공모주 청약 Agent", page_icon="📈", layout="wide")
 client = get_gemini_client()
 
-# DB 초기화 및 테스트 데이터 세팅
-sync_external_ipo_data()
-
-# 3. 사이드바
-with st.sidebar:
-    st.header("📌 주요 안내")
-    st.info("💡 AI가 내부 DB 데이터와 고객의 과거 투자 패턴을 종합 분석합니다.")
-    
-    st.subheader("⚡ 빠른 질문하기")
-    if st.button("에이아이테크 분석해줘"):
-        st.session_state.prompt_input = "에이아이테크 공모주 분석 및 맞춤 청약 전략 알려줘"
-    if st.button("바이오케어 분석해줘"):
-        st.session_state.prompt_input = "바이오케어 공모주 분석해줘"
-
-# 4. 메인 타이틀
-st.title("📈 공모주 청약 안내 & 맞춤 분석 Agent")
-st.caption("AI 기반 공모주 분석기 | 매매내역 기반 개인화 추천 리포트 제공")
-
-# 5. 대화 세션 및 기록 관리
+# 2. 대화 기록 초기화
 if "messages" not in st.session_state:
-    st.session_state.messages = [
-        {"role": "assistant", "content": "안녕하세요! 공모주 청약 분석 Agent입니다. 궁금하신 종목이나 청약 관련 질문을 편하게 해주세요!"}
-    ]
+    st.session_state.messages = []
 
-# 이전 대화 기록 화면 출력
-for msg in st.session_state.messages:
-    st.chat_message(msg["role"]).write(msg["content"])
+# 3. 데이터 로드 (예시 종목 지정)
+company_info = get_company_dict()  # 기본 조회 기업 데이터
 
-# 6. 사용자 입력 처리 (채팅창 또는 사이드바 버튼)
-user_query = st.chat_input("예: 에이아이테크 청약 전략 분석해줘")
-if "prompt_input" in st.session_state and st.session_state.prompt_input:
-    user_query = st.session_state.prompt_input
-    del st.session_state.prompt_input
+# --- 상단 타이틀 및 모드 선택 (Segmented Control / Radio) ---
+st.title("📈 IPO AI 투자 컨설턴트")
+st.caption(f"대상 종목: **{company_info.get('company_name', '종목명')}** | 현재 적용 모델: `{DEFAULT_GEMINI_MODEL}`")
 
-# 7. 질의응답 및 AI 분석 실행
-if user_query:
-    # 사용자 메시지 기록 및 표시
-    st.session_state.messages.append({"role": "user", "content": user_query})
-    st.chat_message("user").write(user_query)
+# 2가지 모드 선택 화면 (버튼 스타일 radio)
+view_mode = st.radio(
+    "원하시는 서비스를 선택하세요:",
+    options=["1. 📊 한눈에 보는 AI 요약 리포트", "2. 💬 AI 챗봇 1:1 질의응답"],
+    horizontal=True,
+    index=0
+)
 
-    # Agent 답변 처리
-    with st.chat_message("assistant"):
-        response_placeholder = st.empty()
-        full_response = ""
+st.divider()
 
-        # DB에 저장된 공모주 맥락 정보 로드 (개발자 A 모듈)
-        db_context = get_ipo_info_from_db()
+# ==========================================
+# SECTON 1: 최종 시각화 요약 장표
+# ==========================================
+if view_mode == "1. 📊 한눈에 보는 AI 요약 리포트":
+    st.subheader("📊 AI 종합 투자 진단 리포트")
+    
+    # 리포트 생성 버튼 / 자동 로딩
+    if st.button("🔄 리포트 새로고침 / AI 분석 실행", type="primary"):
+        st.session_state["report_data"] = None
 
-        system_instruction = f"""
-        너는 대한민국 공모주 청약 전문 분석 에이전트야.
-        
-        [내부 DB 공모주 정보]
-        {db_context}
-        
-        사용자의 질문에 위 DB 정보를 참고하여 친절하고 전문적으로 답변해줘.
-        """
-
-        try:
-            # Gemini 모델 스트리밍 응답 호출
-            response = client.models.generate_content_stream(
-                model=DEFAULT_GEMINI_MODEL,
-                contents=user_query,
-                config=types.GenerateContentConfig(
-                    system_instruction=system_instruction,
-                    temperature=0.3
-                )
+    if "report_data" not in st.session_state or st.session_state["report_data"] is None:
+        with st.spinner("AI가 유저 데이터와 시장 동향을 분석 중입니다..."):
+            st.session_state["report_data"] = analyze_user_portfolio_strategy_with_ai(
+                client=client,
+                user_id="user123",
+                company_info=company_info
             )
 
-            for chunk in response:
-                if chunk.text:
-                    full_response += chunk.text
-                    response_placeholder.markdown(full_response + "▌")
-            
-            response_placeholder.markdown(full_response)
+    report = st.session_state["report_data"]
 
-        except Exception as e:
-            full_response = f"❌ 답변 생성 중 오류가 발생했습니다: {str(e)}"
-            response_placeholder.markdown(full_response)
+    # [상단 대시보드 메트릭 카드]
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        rec = report.get("recommendation", "N/A")
+        if "적극" in rec:
+            st.success(f"### 🎯 AI 추천: {rec}")
+        elif "신중" in rec:
+            st.warning(f"### ⚠️ AI 추천: {rec}")
+        else:
+            st.error(f"### ⛔ AI 추천: {rec}")
 
-        # 답변 세션에 저장
-        st.session_state.messages.append({"role": "assistant", "content": full_response})
+    with col2:
+        st.metric(
+            label="AI 종합 평가 점수",
+            value=f"{report.get('score', 0)}점 / 100점"
+        )
 
-        # 8. 종목 관련 질문 시 맞춤형 AI 리포트/장표 자동 생성 (개발자 B, C 모듈)
-        target_company = None
-        if "에이아이테크" in user_query:
-            target_company = "에이아이테크"
-        elif "바이오케어" in user_query:
-            target_company = "바이오케어"
+    with col3:
+        st.info(f"💡 **추천 청약 전략**\n\n{report.get('strategy_type', '-')}")
 
-        if target_company:
-            # 1) DB에서 해당 종목 정보 가져오기 (개발자 A)
-            company_info = get_company_dict(target_company)
-            
-            if company_info:
-                # 2) 고객 데이터 + 시장동향 + 종목정보 종합 AI 분석 (개발자 B)
-                analysis_result = analyze_user_portfolio_strategy_with_ai(client, "user123", company_info)
-                
-                # 3) UI 맞춤 리포트 장표 출력 (개발자 C)
-                render_ipo_summary_card(company_info, analysis_result)
+    st.markdown("---")
+
+    # [본문 상세 섹션]
+    c_left, c_right = st.columns(2)
+
+    with c_left:
+        st.markdown("#### 💡 AI 핵심 추천 근거")
+        for reason in report.get("reasons", []):
+            st.markdown(f"- {reason}")
+
+        st.markdown("---")
+        st.markdown("#### 🎯 전략 및 매도 가이드")
+        st.write(f"**배정 전략:** {report.get('strategy_desc', '-')}")
+        st.write(f"**매도 시점 가이드:** {report.get('sell_guide', '-')}")
+
+    with c_right:
+        st.markdown("#### 📋 기업 기본 & 공모 정보")
+        st.write(f"- **기업명:** {company_info.get('company_name', '-')}")
+        st.write(f"- **산업군:** {company_info.get('sector', '일반')}")
+        st.write(f"- **확정 공모가:** {company_info.get('offering_price', 0):,}원")
+        st.write(f"- **기관 경쟁률:** {company_info.get('competition_rate', 0)} : 1")
+        st.write(f"- **주관사:** {company_info.get('underwriter', '-')}")
+
+        st.markdown("---")
+        st.markdown("#### 🌐 최근 공모주 및 산업군 동향")
+        st.info("최근 공모주 시장은 **바이오/제약 테마 수급 폭주** 및 상장 당일 변동성 확대 양상을 보이고 있습니다.")
+
+# ==========================================
+# SECTION 2: 챗봇 형태 질의응답 (기존 화면)
+# ==========================================
+else:
+    st.subheader(f"💬 {company_info.get('company_name', '종목')} AI Q&A 대화창")
+    st.caption("공모주 청약, 기업 재무, 사업 모델 등 궁금한 점을 자유롭게 질문해보세요.")
+
+    # 기존 대화 내역 출력
+    for message in st.session_state.messages:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
+
+    # 사용자 질문 입력
+    if user_query := st.chat_input("질문을 입력하세요 (예: 이 기업의 주요 매출원은 뭐야?):"):
+        # 유저 메시지 저장 및 표시
+        st.session_state.messages.append({"role": "user", "content": user_query})
+        with st.chat_message("user"):
+            st.markdown(user_query)
+
+        # AI 프롬프트 구성 (기업 정보 문맥 포함)
+        system_instruction = f"""
+        당신은 공모주 투자 전문 AI 챗봇입니다.
+        현재 상담 대상 종목 정보:
+        - 기업명: {company_info.get('company_name')}
+        - 산업군: {company_info.get('sector')}
+        - 확정 공모가: {company_info.get('offering_price')}원
+        
+        사용자의 질문에 친절하고 정확하게 답변해주세요.
+        """
+
+        # Gemini 스트리밍 응답 출력
+        with st.chat_message("assistant"):
+            response_placeholder = st.empty()
+            full_response = ""
+
+            try:
+                response = client.models.generate_content_stream(
+                    model=DEFAULT_GEMINI_MODEL,
+                    contents=user_query,
+                    config={"temperature": 0.3}
+                )
+
+                for chunk in response:
+                    if chunk.text:
+                        full_response += chunk.text
+                        response_placeholder.markdown(full_response + "▌")
+
+                response_placeholder.markdown(full_response)
+                st.session_state.messages.append({"role": "assistant", "content": full_response})
+
+            except Exception as e:
+                st.error(f"답변 생성 중 오류가 발생했습니다: {str(e)}")
