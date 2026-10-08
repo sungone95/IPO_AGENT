@@ -6,14 +6,14 @@ from tools.portfolio_tool import analyze_user_portfolio_strategy_with_ai, get_ma
 
 # 1. 페이지 기본 설정 및 Client 초기화
 st.set_page_config(
-    page_title="IPO AI 투자 컨설턴트",
+    page_title="IPO 투자 Agent",
     page_icon="📈",
     layout="wide"
 )
 
 client = get_gemini_client()
 
-# 여백 및 스타일 최소화 CSS (3초 스캔용 오밀조밀 컴팩트 UI)
+
 st.markdown("""
     <style>
     .block-container {padding-top: 1rem; padding-bottom: 1rem;}
@@ -25,7 +25,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# 2. 수치 중심 Mock 데이터 (주관적 문구 완전 배제)
+# 2. 수치 중심 Mock 데이터
 UPCOMING_IPOS = {
     "바이오큐어": {
         "company_name": "바이오큐어",
@@ -72,7 +72,7 @@ if "messages" not in st.session_state:
     st.session_state.messages = []
 
 # --- 🎯 상단: 공모주 선택 카드 ---
-st.title("📈 IPO AI 정량 투자 컨설턴트")
+st.title("📈 IPO AI 투자 Agent")
 
 with st.container(border=True):
     selected_company_name = st.radio(
@@ -94,7 +94,7 @@ if "last_selected_company" not in st.session_state or st.session_state["last_sel
 # 서비스 모드 선택
 view_mode = st.radio(
     "서비스 선택:",
-    options=["1. 📊 3초 정량 시각화 리포트", "2. 💬 AI 챗봇 1:1 Q&A"],
+    options=["1. 📊 시각화 리포트", "2. 💬 AI 챗봇 1:1 Q&A"],
     horizontal=True,
     index=0
 )
@@ -102,9 +102,9 @@ view_mode = st.radio(
 st.divider()
 
 # ==========================================
-# SECTION 1: 3초 정량 시각화 리포트
+# SECTION 1: 시각화 리포트
 # ==========================================
-if view_mode == "1. 📊 3초 정량 시각화 리포트":
+if view_mode == "1. 📊 시각화 리포트":
     user_name = "김투린"
 
     if "report_data" not in st.session_state or st.session_state["report_data"] is None:
