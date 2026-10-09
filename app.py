@@ -6,14 +6,13 @@ from tools.portfolio_tool import analyze_user_portfolio_strategy_with_ai, get_ma
 
 # 1. 페이지 기본 설정 및 Client 초기화
 st.set_page_config(
-    page_title="IPO AI 투자 컨설턴트",
+    page_title="IPO AI 투자 AGENT",
     page_icon="📈",
     layout="wide"
 )
 
 client = get_gemini_client()
 
-# 컴팩트 여백 및 디자인 커스텀 CSS
 st.markdown("""
     <style>
     .block-container {padding-top: 1rem; padding-bottom: 1rem;}
@@ -95,7 +94,7 @@ if "messages" not in st.session_state:
     st.session_state.messages = []
 
 # --- 🎯 1단계: 상단 종목 선택 카드 ---
-st.title("📈 IPO AI 정량 투자 컨설턴트")
+st.title("📈 IPO AI 투자 AGENT")
 
 with st.container(border=True):
     selected_company_name = st.radio(
