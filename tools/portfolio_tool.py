@@ -38,13 +38,13 @@ def get_market_trends() -> Dict[str, Any]:
 
 
 def analyze_user_portfolio_strategy_with_ai(client: genai.Client, user_id: str, company_info: Dict[str, Any]) -> Dict[str, Any]:
-    """Gemini AI가 일반 초보 개미 투자자 눈높이의 정량 수치 및 3초 행동 전략을 반환"""
+    """Gemini AI가 일반 초보 투자자 눈높이의 정량 수치 및 실전 행동 전략을 반환"""
     user_data = get_user_transaction_history(user_id)
     market_data = get_market_trends()
     user_name = user_data.get("user_name", "고객")
     
     prompt = f"""
-    당신은 {user_name} 고객(초보 개미 투자자)을 위한 3초 직관 IPO 투자 안내 시스템입니다.
+    당신은 {user_name} 고객(초보 개미 투자자)을 위한 직관적 IPO 투자 가이드 시스템입니다.
     전문 용어나 모호한 수식어는 배제하고, 오직 직관적인 수치와 행동 지침만 산출하세요.
 
     [대상 공모주 정보]
