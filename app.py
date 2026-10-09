@@ -123,35 +123,59 @@ if view_mode == "1. 📊 3초 비교 막대그래프 리포트":
     strategy = report.get("strategy_type", "-")
 
     # ==========================================
-    # 1️⃣ [기업 지표 vs 평균] & [기관 지표 vs 평균] 막대그래프
+    # 1️⃣ [기업 지표 vs 평균] & [기관 지표 vs 평균] 비교 시각화 (수정본)
     # ==========================================
     with st.container(border=True):
-        st.markdown("#### 1️⃣ 핵심 지표 vs 시장·업계 평균 비교 막대그래프")
+        st.markdown("#### 1️⃣ 핵심 지표 vs 시장·업계 평균 비교 (3초 스캔)")
         
         c_left, c_right = st.columns(2, gap="medium")
         
-        # 👈 [LEFT]: 기업 지표 (점유율 & 성장률) 막대그래프 비교
+        # 👈 [LEFT]: 기업 지표 (시장점유율 / 매출성장률) 비교
         with c_left:
             st.markdown("##### 🏢 기업 경쟁력 vs 업계 평균")
-            corp_compare_df = pd.DataFrame({
-                "시장점유율(%)": [company_info["market_share"], company_info["market_share_avg"]],
-                "매출성장률(%)": [company_info["revenue_growth"], company_info["revenue_growth_avg"]]
-            }, index=[company_info["company_name"], "업계 평균"])
             
-            st.bar_chart(corp_compare_df, height=150)
-            st.caption(f"📊 점유율 **{company_info['market_share']}%** (평균 {company_info['market_share_avg']}%) | 성장률 **+{company_info['revenue_growth']}%** (평균 +{company_info['revenue_growth_avg']}%)")
+            sub1, sub2 = st.columns(2)
+            with sub1:
+                st.caption("📌 **시장 점유율 (%)**")
+                share_df = pd.DataFrame({
+                    "구분": [company_info["company_name"], "업계 평균"],
+                    "점유율(%)": [company_info["market_share"], company_info["market_share_avg"]]
+                }).set_index("구분")
+                # 높이를 210으로 확보하여 라벨 회전 방지 및 막대 가시성 확보
+                st.bar_chart(share_df, height=210, color=["#1E88E5"])
+                st.markdown(f"<div style='text-align:center; font-weight:bold; font-size:0.9rem;'>{company_info['market_share']}% <span style='color:#757575;'>(평균 {company_info['market_share_avg']}%)</span></div>", unsafe_allow_html=True)
 
-        # 👉 [RIGHT]: 기관 반응 (경쟁률 & 의무보유확약) 막대그래프 비교
+            with sub2:
+                st.caption("📌 **3년 매출 성장률 (%)**")
+                growth_df = pd.DataFrame({
+                    "구분": [company_info["company_name"], "업계 평균"],
+                    "성장률(%)": [company_info["revenue_growth"], company_info["revenue_growth_avg"]]
+                }).set_index("구분")
+                st.bar_chart(growth_df, height=210, color=["#43A047"])
+                st.markdown(f"<div style='text-align:center; font-weight:bold; font-size:0.9rem;'>+{company_info['revenue_growth']}% <span style='color:#757575;'>(평균 +{company_info['revenue_growth_avg']}%)</span></div>", unsafe_allow_html=True)
+
+        # 👉 [RIGHT]: 기관 반응 (경쟁률 / 의무보유확약) 비교
         with c_right:
             st.markdown("##### 🏛️ 기관 반응 vs 최근 공모주 평균")
             
-            inst_compare_df = pd.DataFrame({
-                "경쟁률(:1)": [company_info["competition_rate"], market_data["avg_competition_rate"]],
-                "의무보유확약(%)": [company_info["lockup_rate"], market_data["avg_lockup_rate"]]
-            }, index=[company_info["company_name"], "공모주 평균"])
-            
-            st.bar_chart(inst_compare_df, height=150)
-            st.caption(f"📊 경쟁률 **{company_info['competition_rate']}:1** (평균 {market_data['avg_competition_rate']}:1) | 락업 **{company_info['lockup_rate']}%** (평균 {market_data['avg_lockup_rate']}%)")
+            sub3, sub4 = st.columns(2)
+            with sub3:
+                st.caption("📌 **기관 경쟁률 (:1)**")
+                comp_df = pd.DataFrame({
+                    "구분": [company_info["company_name"], "공모주 평균"],
+                    "경쟁률": [company_info["competition_rate"], market_data["avg_competition_rate"]]
+                }).set_index("구분")
+                st.bar_chart(comp_df, height=210, color=["#FB8C00"])
+                st.markdown(f"<div style='text-align:center; font-weight:bold; font-size:0.9rem;'>{company_info['competition_rate']:,}:1 <span style='color:#757575;'>(평균 {market_data['avg_competition_rate']:,}:1)</span></div>", unsafe_allow_html=True)
+
+            with sub4:
+                st.caption("📌 **의무보유확약 (%)**")
+                lock_df = pd.DataFrame({
+                    "구분": [company_info["company_name"], "공모주 평균"],
+                    "확약비율(%)": [company_info["lockup_rate"], market_data["avg_lockup_rate"]]
+                }).set_index("구분")
+                st.bar_chart(lock_df, height=210, color=["#8E24AA"])
+                st.markdown(f"<div style='text-align:center; font-weight:bold; font-size:0.9rem;'>{company_info['lockup_rate']}% <span style='color:#757575;'>(평균 {market_data['avg_lockup_rate']}%)</span></div>", unsafe_allow_html=True):1) | 락업 **{company_info['lockup_rate']}%** (평균 {market_data['avg_lockup_rate']}%)")
 
     # ==========================================
     # 2️⃣ 고객 맞춤 진단 (컴팩트 메트릭)
