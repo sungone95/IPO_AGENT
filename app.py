@@ -13,7 +13,7 @@ st.set_page_config(
 
 client = get_gemini_client()
 
-# 컴팩트 여백 및 스타일링
+# 컴팩트 여백 및 디자인 커스텀 CSS
 st.markdown("""
     <style>
     .block-container {padding-top: 1rem; padding-bottom: 1rem;}
@@ -23,23 +23,30 @@ st.markdown("""
     h4 {margin-top: 0.1rem !important; margin-bottom: 0.3rem !important; font-size: 1.05rem !important;}
     h5 {margin-top: 0.1rem !important; margin-bottom: 0.2rem !important; font-size: 0.95rem !important;}
     .stAlert {padding: 0.4rem 0.6rem !important;}
+    .action-board {background-color: #f0f4f8; padding: 10px; border-radius: 8px; border-left: 5px solid #1E88E5;}
     </style>
 """, unsafe_allow_html=True)
 
-# 2. 정량 Mock 데이터
+# 2. 정량 Mock 데이터 (주관사 수수료, 유통물량, 구주매출 비율 추가)
 UPCOMING_IPOS = {
     "바이오큐어": {
         "company_name": "바이오큐어",
         "sector": "바이오/제약",
         "market_share": 42.0,
-        "market_share_avg": 15.0,     # 업계 평균 점유율
+        "market_share_avg": 15.0,
         "revenue_growth": 128.0,
-        "revenue_growth_avg": 35.0,   # 업계 평균 성장률
+        "revenue_growth_avg": 35.0,
         "offering_price": 28000,
         "competition_rate": 1420,
         "lockup_rate": 65.4,
+        "float_rate": 22.5,          # 유통가능물량 비율 (%)
+        "old_shares_rate": 0.0,      # 구주매출 비율 (%)
+        "min_quantity": 10,          # 최소 청약 수량 (주)
         "underwriter": "한국투자증권",
+        "fee": 2000,                 # 온라인 청약 수수료
+        "account_open_rule": "청약 당일 비대면 개설 가능",
         "start_date": "2026-10-10",
+        "listing_date": "2026-10-20",
         "d_day": "D-1"
     },
     "클라우드원": {
@@ -52,8 +59,14 @@ UPCOMING_IPOS = {
         "offering_price": 15000,
         "competition_rate": 890,
         "lockup_rate": 42.1,
+        "float_rate": 28.0,
+        "old_shares_rate": 10.0,
+        "min_quantity": 10,
         "underwriter": "NH투자증권",
+        "fee": 2000,
+        "account_open_rule": "청약 전일까지 개설 필수",
         "start_date": "2026-10-12",
+        "listing_date": "2026-10-22",
         "d_day": "D-3"
     },
     "에코에너지": {
@@ -66,8 +79,14 @@ UPCOMING_IPOS = {
         "offering_price": 42000,
         "competition_rate": 350,
         "lockup_rate": 12.8,
+        "float_rate": 38.5,
+        "old_shares_rate": 25.0,
+        "min_quantity": 10,
         "underwriter": "미래에셋증권",
+        "fee": 2000,
+        "account_open_rule": "청약 당일 비대면 개설 가능",
         "start_date": "2026-10-15",
+        "listing_date": "2026-10-25",
         "d_day": "D-6"
     }
 }
@@ -97,7 +116,7 @@ if "last_selected_company" not in st.session_state or st.session_state["last_sel
 
 view_mode = st.radio(
     "서비스 선택:",
-    options=["1. 📊 3초 비교 막대그래프 리포트", "2. 💬 AI 챗봇 1:1 Q&A"],
+    options=["1. 📊 3초 개미 맞춤 리포트", "2. 💬 AI 챗봇 1:1 Q&A"],
     horizontal=True,
     index=0
 )
@@ -105,13 +124,13 @@ view_mode = st.radio(
 st.divider()
 
 # ==========================================
-# SECTION 1: 3초 비교 막대그래프 리포트
+# SECTION 1: 3초 개미 맞춤 리포트
 # ==========================================
-if view_mode == "1. 📊 3초 비교 막대그래프 리포트":
+if view_mode == "1. 📊 3초 개미 맞춤 리포트":
     user_name = "김투린"
 
     if "report_data" not in st.session_state or st.session_state["report_data"] is None:
-        with st.spinner("평균 비교 데이터 산출 중..."):
+        with st.spinner("개미 맞춤 정량 데이터 및 수익 분석 중..."):
             st.session_state["report_data"] = analyze_user_portfolio_strategy_with_ai(
                 client=client,
                 user_id="user123",
@@ -119,21 +138,55 @@ if view_mode == "1. 📊 3초 비교 막대그래프 리포트":
             )
 
     report = st.session_state["report_data"]
-    rec = report.get("recommendation", "N/A")
-    strategy = report.get("strategy_type", "-")
+    rec = report.get("recommendation", "청약 추천")
+    strategy = report.get("strategy_type", "균등 배정 전용")
+    traffic = report.get("traffic_lights", {"institution": "🟢", "lockup": "🟢", "float_shares": "🟡", "old_shares": "🟢"})
+
+    # --- 🚀 [NEW] 초보 개미 3초 액션 보드 (치킨값 계산기 + 신호등 + 준비물) ---
+    with st.container(border=True):
+        st.markdown(f"#### 🍗 초보 개미 3초 실전 가이드: [{company_info['company_name']}]")
+        
+        # 1) 치킨값 계산
+        min_deposit = int((company_info['offering_price'] * company_info['min_quantity']) * 0.5)
+        day1_return_rate = report.get("predicted_day1_return", 150.0)
+        expected_profit_per_share = int(company_info['offering_price'] * (day1_return_rate / 100.0) - company_info['fee'])
+        chicken_count = round(expected_profit_per_share / 23000, 1)
+
+        b1, b2, b3 = st.columns([1.2, 1.3, 1.5], gap="medium")
+        
+        with b1:
+            st.metric(
+                label="💵 최소 준비금 (균등 10주)",
+                value=f"{min_deposit:,}원",
+                help=f"공모가 {company_info['offering_price']:,}원 × 10주 × 증거금률 50%"
+            )
+            st.caption(f"🍗 1주 배정 시 예상 순익: **+{expected_profit_per_share:,}원** (치킨 {chicken_count}마리)")
+
+        with b2:
+            st.markdown("🚦 **3초 투자 신호등**")
+            st.markdown(f"""
+            - 기관인기: **{traffic.get('institution', '🟢')}** | 락업: **{traffic.get('lockup', '🟢')}**
+            - 유통물량: **{traffic.get('float_shares', '🟡')}** | 구주매출: **{traffic.get('old_shares', '🟢')}**
+            """)
+
+        with b3:
+            st.markdown("🏦 **청약 준비 증권사**")
+            st.markdown(f"**{company_info['underwriter']}** (수수료 {company_info['fee']:,}원)")
+            st.caption(f"📌 {company_info['account_open_rule']}")
+
+        st.info(f"⏰ **상장일({company_info['listing_date']}) 아침 8시 40분 행동 요령:** {report.get('morning_guide', '-')}")
 
     # ==========================================
-    # 1️⃣ 핵심 지표 vs 시장·업계 평균 비교 (개별 차트 분리)
+    # 1️⃣ 핵심 지표 vs 시장·업계 평균 비교 막대그래프
     # ==========================================
     with st.container(border=True):
-        st.markdown("#### 1️⃣ 핵심 지표 vs 시장·업계 평균 비교 (3초 스캔)")
+        st.markdown("#### 1️⃣ 핵심 지표 vs 시장·업계 평균 비교")
         
         c_left, c_right = st.columns(2, gap="medium")
         
-        # 👈 [LEFT]: 기업 지표 (시장점유율 / 매출성장률) 비교
+        # 👈 [LEFT]: 기업 지표 (점유율 / 성장률)
         with c_left:
             st.markdown("##### 🏢 기업 경쟁력 vs 업계 평균")
-            
             sub1, sub2 = st.columns(2)
             with sub1:
                 st.caption("📌 **시장 점유율 (%)**")
@@ -153,10 +206,9 @@ if view_mode == "1. 📊 3초 비교 막대그래프 리포트":
                 st.bar_chart(growth_df, height=210, color=["#43A047"])
                 st.markdown(f"<div style='text-align:center; font-weight:bold; font-size:0.85rem;'>+{company_info['revenue_growth']}% <span style='color:#888;'>(평균 +{company_info['revenue_growth_avg']}%)</span></div>", unsafe_allow_html=True)
 
-        # 👉 [RIGHT]: 기관 반응 (경쟁률 / 의무보유확약) 비교
+        # 👉 [RIGHT]: 기관 반응 (경쟁률 / 의무보유확약)
         with c_right:
             st.markdown("##### 🏛️ 기관 반응 vs 최근 공모주 평균")
-            
             sub3, sub4 = st.columns(2)
             with sub3:
                 st.caption("📌 **기관 경쟁률 (:1)**")
@@ -177,7 +229,7 @@ if view_mode == "1. 📊 3초 비교 막대그래프 리포트":
                 st.markdown(f"<div style='text-align:center; font-weight:bold; font-size:0.85rem;'>{company_info['lockup_rate']}% <span style='color:#888;'>(평균 {market_data['avg_lockup_rate']}%)</span></div>", unsafe_allow_html=True)
 
     # ==========================================
-    # 2️⃣ 고객 맞춤 진단 (수치 메트릭 카드)
+    # 2️⃣ 고객 맞춤 진단
     # ==========================================
     with st.container(border=True):
         st.markdown(f"#### 2️⃣ {user_name} 고객 맞춤 정량 진단")
@@ -246,8 +298,9 @@ else:
         기관경쟁률: {company_info['competition_rate']}:1
         의무보유확약: {company_info['lockup_rate']}%
         시장점유율: {company_info['market_share']}%
+        주관사: {company_info['underwriter']}
         
-        수치 데이터를 근거로 명확히 답변하세요.
+        초보 개미 투자자도 바로 이해할 수 있도록 명확한 수치로 간결하게 답변하세요.
         """
 
         with st.chat_message("assistant"):
