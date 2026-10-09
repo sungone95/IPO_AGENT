@@ -27,7 +27,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# 2. 정량 Mock 데이터 (주관사 수수료, 유통물량, 구주매출 비율 추가)
+# 2. 정량 Mock 데이터
 UPCOMING_IPOS = {
     "바이오큐어": {
         "company_name": "바이오큐어",
@@ -39,11 +39,11 @@ UPCOMING_IPOS = {
         "offering_price": 28000,
         "competition_rate": 1420,
         "lockup_rate": 65.4,
-        "float_rate": 22.5,          # 유통가능물량 비율 (%)
-        "old_shares_rate": 0.0,      # 구주매출 비율 (%)
-        "min_quantity": 10,          # 최소 청약 수량 (주)
+        "float_rate": 22.5,
+        "old_shares_rate": 0.0,
+        "min_quantity": 10,
         "underwriter": "한국투자증권",
-        "fee": 2000,                 # 온라인 청약 수수료
+        "fee": 2000,
         "account_open_rule": "청약 당일 비대면 개설 가능",
         "start_date": "2026-10-10",
         "listing_date": "2026-10-20",
@@ -116,7 +116,7 @@ if "last_selected_company" not in st.session_state or st.session_state["last_sel
 
 view_mode = st.radio(
     "서비스 선택:",
-    options=["1. 📊 3초 개미 맞춤 리포트", "2. 💬 AI 챗봇 1:1 Q&A"],
+    options=["1. 📊 한눈에 보는 맞춤 리포트", "2. 💬 AI 챗봇 1:1 Q&A"],
     horizontal=True,
     index=0
 )
@@ -124,13 +124,13 @@ view_mode = st.radio(
 st.divider()
 
 # ==========================================
-# SECTION 1: 3초 개미 맞춤 리포트
+# SECTION 1: 한눈에 보는 맞춤 리포트
 # ==========================================
-if view_mode == "1. 📊 3초 개미 맞춤 리포트":
+if view_mode == "1. 📊 한눈에 보는 맞춤 리포트":
     user_name = "김투린"
 
     if "report_data" not in st.session_state or st.session_state["report_data"] is None:
-        with st.spinner("개미 맞춤 정량 데이터 및 수익 분석 중..."):
+        with st.spinner("맞춤 정량 데이터 및 수익 분석 중..."):
             st.session_state["report_data"] = analyze_user_portfolio_strategy_with_ai(
                 client=client,
                 user_id="user123",
@@ -142,11 +142,10 @@ if view_mode == "1. 📊 3초 개미 맞춤 리포트":
     strategy = report.get("strategy_type", "균등 배정 전용")
     traffic = report.get("traffic_lights", {"institution": "🟢", "lockup": "🟢", "float_shares": "🟡", "old_shares": "🟢"})
 
-    # --- 🚀 [NEW] 초보 개미 3초 액션 보드 (치킨값 계산기 + 신호등 + 준비물) ---
+    # --- 실전 액션 보드 (치킨값 계산기 + 신호등 + 준비물) ---
     with st.container(border=True):
-        st.markdown(f"#### 🍗 초보 개미 3초 실전 가이드: [{company_info['company_name']}]")
+        st.markdown(f"#### 🍗 실전 투자 가이드: [{company_info['company_name']}]")
         
-        # 1) 치킨값 계산
         min_deposit = int((company_info['offering_price'] * company_info['min_quantity']) * 0.5)
         day1_return_rate = report.get("predicted_day1_return", 150.0)
         expected_profit_per_share = int(company_info['offering_price'] * (day1_return_rate / 100.0) - company_info['fee'])
@@ -163,14 +162,14 @@ if view_mode == "1. 📊 3초 개미 맞춤 리포트":
             st.caption(f"🍗 1주 배정 시 예상 순익: **+{expected_profit_per_share:,}원** (치킨 {chicken_count}마리)")
 
         with b2:
-            st.markdown("🚦 **3초 투자 신호등**")
+            st.markdown("🚦 **투자 핵심 신호등**")
             st.markdown(f"""
             - 기관인기: **{traffic.get('institution', '🟢')}** | 락업: **{traffic.get('lockup', '🟢')}**
             - 유통물량: **{traffic.get('float_shares', '🟡')}** | 구주매출: **{traffic.get('old_shares', '🟢')}**
             """)
 
         with b3:
-            st.markdown("🏦 **청약 준비 증권사**")
+            st.markdown("🏦 **청약 주관 증권사**")
             st.markdown(f"**{company_info['underwriter']}** (수수료 {company_info['fee']:,}원)")
             st.caption(f"📌 {company_info['account_open_rule']}")
 
