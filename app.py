@@ -13,7 +13,7 @@ st.set_page_config(
 
 client = get_gemini_client()
 
-# 컴팩트 여백 스타일
+# 컴팩트 여백 및 스타일링
 st.markdown("""
     <style>
     .block-container {padding-top: 1rem; padding-bottom: 1rem;}
@@ -26,7 +26,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# 2. Mock 데이터 (업계 평균치 데이터 포함)
+# 2. 정량 Mock 데이터
 UPCOMING_IPOS = {
     "바이오큐어": {
         "company_name": "바이오큐어",
@@ -123,7 +123,7 @@ if view_mode == "1. 📊 3초 비교 막대그래프 리포트":
     strategy = report.get("strategy_type", "-")
 
     # ==========================================
-    # 1️⃣ [기업 지표 vs 평균] & [기관 지표 vs 평균] 비교 시각화 (수정본)
+    # 1️⃣ 핵심 지표 vs 시장·업계 평균 비교 (개별 차트 분리)
     # ==========================================
     with st.container(border=True):
         st.markdown("#### 1️⃣ 핵심 지표 vs 시장·업계 평균 비교 (3초 스캔)")
@@ -141,9 +141,8 @@ if view_mode == "1. 📊 3초 비교 막대그래프 리포트":
                     "구분": [company_info["company_name"], "업계 평균"],
                     "점유율(%)": [company_info["market_share"], company_info["market_share_avg"]]
                 }).set_index("구분")
-                # 높이를 210으로 확보하여 라벨 회전 방지 및 막대 가시성 확보
                 st.bar_chart(share_df, height=210, color=["#1E88E5"])
-                st.markdown(f"<div style='text-align:center; font-weight:bold; font-size:0.9rem;'>{company_info['market_share']}% <span style='color:#757575;'>(평균 {company_info['market_share_avg']}%)</span></div>", unsafe_allow_html=True)
+                st.markdown(f"<div style='text-align:center; font-weight:bold; font-size:0.85rem;'>{company_info['market_share']}% <span style='color:#888;'>(평균 {company_info['market_share_avg']}%)</span></div>", unsafe_allow_html=True)
 
             with sub2:
                 st.caption("📌 **3년 매출 성장률 (%)**")
@@ -152,7 +151,7 @@ if view_mode == "1. 📊 3초 비교 막대그래프 리포트":
                     "성장률(%)": [company_info["revenue_growth"], company_info["revenue_growth_avg"]]
                 }).set_index("구분")
                 st.bar_chart(growth_df, height=210, color=["#43A047"])
-                st.markdown(f"<div style='text-align:center; font-weight:bold; font-size:0.9rem;'>+{company_info['revenue_growth']}% <span style='color:#757575;'>(평균 +{company_info['revenue_growth_avg']}%)</span></div>", unsafe_allow_html=True)
+                st.markdown(f"<div style='text-align:center; font-weight:bold; font-size:0.85rem;'>+{company_info['revenue_growth']}% <span style='color:#888;'>(평균 +{company_info['revenue_growth_avg']}%)</span></div>", unsafe_allow_html=True)
 
         # 👉 [RIGHT]: 기관 반응 (경쟁률 / 의무보유확약) 비교
         with c_right:
@@ -166,7 +165,7 @@ if view_mode == "1. 📊 3초 비교 막대그래프 리포트":
                     "경쟁률": [company_info["competition_rate"], market_data["avg_competition_rate"]]
                 }).set_index("구분")
                 st.bar_chart(comp_df, height=210, color=["#FB8C00"])
-                st.markdown(f"<div style='text-align:center; font-weight:bold; font-size:0.9rem;'>{company_info['competition_rate']:,}:1 <span style='color:#757575;'>(평균 {market_data['avg_competition_rate']:,}:1)</span></div>", unsafe_allow_html=True)
+                st.markdown(f"<div style='text-align:center; font-weight:bold; font-size:0.85rem;'>{company_info['competition_rate']:,}:1 <span style='color:#888;'>(평균 {market_data['avg_competition_rate']:,}:1)</span></div>", unsafe_allow_html=True)
 
             with sub4:
                 st.caption("📌 **의무보유확약 (%)**")
@@ -175,10 +174,10 @@ if view_mode == "1. 📊 3초 비교 막대그래프 리포트":
                     "확약비율(%)": [company_info["lockup_rate"], market_data["avg_lockup_rate"]]
                 }).set_index("구분")
                 st.bar_chart(lock_df, height=210, color=["#8E24AA"])
-                st.markdown(f"<div style='text-align:center; font-weight:bold; font-size:0.9rem;'>{company_info['lockup_rate']}% <span style='color:#757575;'>(평균 {market_data['avg_lockup_rate']}%)</span></div>", unsafe_allow_html=True):1) | 락업 **{company_info['lockup_rate']}%** (평균 {market_data['avg_lockup_rate']}%)")
+                st.markdown(f"<div style='text-align:center; font-weight:bold; font-size:0.85rem;'>{company_info['lockup_rate']}% <span style='color:#888;'>(평균 {market_data['avg_lockup_rate']}%)</span></div>", unsafe_allow_html=True)
 
     # ==========================================
-    # 2️⃣ 고객 맞춤 진단 (컴팩트 메트릭)
+    # 2️⃣ 고객 맞춤 진단 (수치 메트릭 카드)
     # ==========================================
     with st.container(border=True):
         st.markdown(f"#### 2️⃣ {user_name} 고객 맞춤 정량 진단")
@@ -189,7 +188,7 @@ if view_mode == "1. 📊 3초 비교 막대그래프 리포트":
         p4.metric("평균 보유 기간", "1.5일", delta="-12.5일")
 
     # ==========================================
-    # 3️⃣ & 4️⃣ [현황 축소 + 상장 당일 수익률 및 주가 추이 예측]
+    # 3️⃣ & 4️⃣ 시장 동향 & AI 주가/수익률 예측
     # ==========================================
     st.markdown("#### 3️⃣ 시장 동향 & AI 주가/수익률 예측")
     
@@ -199,14 +198,14 @@ if view_mode == "1. 📊 3초 비교 막대그래프 리포트":
         with st.container(border=True):
             st.markdown("##### 📉 최근 IPO 수익률 (%)")
             ipo_df = pd.DataFrame(market_data["recent_ipo_performances"]).set_index("name")
-            st.bar_chart(ipo_df["return_rate"], height=120)
+            st.bar_chart(ipo_df["return_rate"], height=130)
 
     with col_b:
         with st.container(border=True):
             st.markdown(f"##### 📈 최근 {company_info['sector']} 지수")
             dates = pd.date_range(end=pd.Timestamp.now(), periods=30, freq='D')
             sector_trend = np.linspace(100, 125, 30) + np.random.normal(0, 2, 30)
-            st.line_chart(pd.DataFrame({"지수": sector_trend}, index=dates), height=120)
+            st.line_chart(pd.DataFrame({"지수": sector_trend}, index=dates), height=130)
 
     with col_c:
         with st.container(border=True):
@@ -222,7 +221,7 @@ if view_mode == "1. 📊 3초 비교 막대그래프 리포트":
             base_p = company_info['offering_price'] * (1 + day1_ret / 100.0)
             predicted_prices = base_p + np.cumsum(np.random.normal(50, 300, 30))
             
-            st.line_chart(pd.DataFrame({"예측 주가(원)": predicted_prices}, index=future_dates), height=120)
+            st.line_chart(pd.DataFrame({"예측 주가(원)": predicted_prices}, index=future_dates), height=130)
 
 # ==========================================
 # SECTION 2: 챗봇 형태 질의응답
