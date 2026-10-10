@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 from config import get_gemini_client, DEFAULT_GEMINI_MODEL
 from tools.portfolio_tool import analyze_user_portfolio_strategy_with_ai, get_market_trends
+from tools.user_db import get_all_users, get_user_holdings, insert_user_holding
 from real_view import render_real_ipo
 
 # 1. 페이지 기본 설정 및 Client 초기화
@@ -28,17 +29,80 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
+# ==========================================
+# 👤 [SIDEBAR] 고객 선택 & 매매내역 관리
+# ==========================================
+with st.sidebar:
+    st.header("👤 고객 포트폴리오 관리")
 
+    # 1. 고객 선택
+    registered_users = get_all_users()
+    user_options = registered_users + ["+ 신규 고객 직접 입력"]
+    
+    selected_option = st.selectbox("분석 대상 고객 선택:", user_options, index=0)
+    
+    if selected_option == "+ 신규 고객 직접 입력":
+        current_user = st.text_input("새 고객명 입력:", value="홍길동").strip()
+    else:
+        current_user = selected_option
+
+    st.success(f"현재 선택된 고객: **{current_user}**")
+    st.divider()
+
+    # 2. 현재 고객 보유 주식 현황
+    user_holdings = get_user_holdings(current_user)
+    with st.expander(f"📋 {current_user}님 보유 종목 ({len(user_holdings)}건)", expanded=False):
+        if user_holdings:
+            df_holdings = pd.DataFrame(user_holdings)[["stbd_name", "stbd_code", "hold_qty", "stbd_sector"]]
+            df_holdings.columns = ["종목명", "코드", "보유수량", "업종"]
+            st.dataframe(df_holdings, use_container_width=True, hide_index=True)
+        else:
+            st.caption("등록된 보유 종목이 없습니다. 아래에서 추가해 보세요.")
+
+    # 3. 매매/보유 내역 입력 폼
+    with st.expander("➕ 종목 매매/보유 내역 등록", expanded=False):
+        with st.form("trade_info_form", clear_on_submit=True):
+            st.caption(f"대상 고객: **{current_user}**")
+            in_code = st.text_input("종목코드 (stbd_code)", value="A005930")
+            in_name = st.text_input("종목명 (stbd_name)", value="삼성전자")
+            in_qty = st.number_input("보유수량 (hold_qty)", min_value=1, value=100, step=10)
+            in_sector = st.selectbox(
+                "업종/섹터 (stbd_sector)",
+                ["IT/반도체", "바이오/제약", "2차전지/소재", "IT/SaaS", "금융/지주", "자동차/운송", "일반/제조", "기타"]
+            )
+
+            submit_btn = st.form_submit_button("Supabase에 저장", use_container_width=True)
+            if submit_btn:
+                if in_code and in_name:
+                    success = insert_user_holding(
+                        user_name=current_user,
+                        stbd_code=in_code,
+                        stbd_name=in_name,
+                        hold_qty=in_qty,
+                        stbd_sector=in_sector
+                    )
+                    if success:
+                        st.success(f"{in_name} 등록 완료!")
+                        st.rerun()
+                else:
+                    st.error("종목코드와 종목명을 모두 입력해주세요.")
+
+
+# ==========================================
+# 📊 [MAIN] 데이터 모드 분기
+# ==========================================
 data_mode = st.radio("데이터 모드", ["실제 기업 분석", "데모 종목"], horizontal=True)
+
 if data_mode == "실제 기업 분석":
     try:
         client = get_gemini_client() if st.secrets.get("GEMINI_API_KEY") else None
     except Exception:
         client = None
-    render_real_ipo(client)
+    render_real_ipo(client, user_name=current_user)
     st.stop()
+
 client = get_gemini_client()
-st.info("데모 모드: 아래 기업·시장·고객 데이터와 예측 그래프는 예시 값입니다.")
+st.info(f"데모 모드: 현재 **{current_user}** 고객님의 포트폴리오가 추천 분석에 반영됩니다.")
 
 # 2. 정량 Mock 데이터
 UPCOMING_IPOS = {
@@ -140,20 +204,18 @@ st.divider()
 # SECTION 1: 한눈에 보는 맞춤 리포트
 # ==========================================
 if view_mode == "1. 📊 한눈에 보는 맞춤 리포트":
-    user_name = "김투린"
-
     if "report_data" not in st.session_state or st.session_state["report_data"] is None:
         with st.spinner("맞춤 정량 데이터 및 수익 분석 중..."):
             st.session_state["report_data"] = analyze_user_portfolio_strategy_with_ai(
                 client=client,
-                user_id="user123",
+                user_id=current_user,
                 company_info=company_info
             )
 
     report = st.session_state["report_data"]
     rec = report.get("recommendation", "청약 추천")
     strategy = report.get("strategy_type", "균등 배정 전용")
-    traffic = report.get("traffic_lights", {"institution": "🟢", "lockup": "🟢", "float_shares": "🟡", "old_shares": "🟢"})
+    traffic = report.get("traffic_lights", {"institution": "🟢", "lockup": "🟢", "financial": "🟢", "risks": "🟡"})
 
     # --- 실전 액션 보드 (치킨값 계산기 + 신호등 + 준비물) ---
     with st.container(border=True):
@@ -178,7 +240,7 @@ if view_mode == "1. 📊 한눈에 보는 맞춤 리포트":
             st.markdown("🚦 **투자 핵심 신호등**")
             st.markdown(f"""
             - 기관인기: **{traffic.get('institution', '🟢')}** | 락업: **{traffic.get('lockup', '🟢')}**
-            - 유통물량: **{traffic.get('float_shares', '🟡')}** | 구주매출: **{traffic.get('old_shares', '🟢')}**
+            - 재무건전: **{traffic.get('financial', '🟢')}** | 공시위험: **{traffic.get('risks', '🟡')}**
             """)
 
         with b3:
@@ -189,14 +251,13 @@ if view_mode == "1. 📊 한눈에 보는 맞춤 리포트":
         st.info(f"⏰ **상장일({company_info['listing_date']}) 아침 8시 40분 행동 요령:** {report.get('morning_guide', '-')}")
 
     # ==========================================
-    # 1️⃣ 핵심 지표 vs 시장·업계 평균 비교 막대그래프
+    # 1️⃣ 핵심 지표 vs 시장·업계 평균 비교
     # ==========================================
     with st.container(border=True):
         st.markdown("#### 1️⃣ 핵심 지표 vs 시장·업계 평균 비교")
 
         c_left, c_right = st.columns(2, gap="medium")
 
-        # 👈 [LEFT]: 기업 지표 (점유율 / 성장률)
         with c_left:
             st.markdown("##### 🏢 기업 경쟁력 vs 업계 평균")
             sub1, sub2 = st.columns(2)
@@ -218,7 +279,6 @@ if view_mode == "1. 📊 한눈에 보는 맞춤 리포트":
                 st.bar_chart(growth_df, height=210, color=["#43A047"])
                 st.markdown(f"<div style='text-align:center; font-weight:bold; font-size:0.85rem;'>+{company_info['revenue_growth']}% <span style='color:#888;'>(평균 +{company_info['revenue_growth_avg']}%)</span></div>", unsafe_allow_html=True)
 
-        # 👉 [RIGHT]: 기관 반응 (경쟁률 / 의무보유확약)
         with c_right:
             st.markdown("##### 🏛️ 기관 반응 vs 최근 공모주 평균")
             sub3, sub4 = st.columns(2)
@@ -241,15 +301,49 @@ if view_mode == "1. 📊 한눈에 보는 맞춤 리포트":
                 st.markdown(f"<div style='text-align:center; font-weight:bold; font-size:0.85rem;'>{company_info['lockup_rate']}% <span style='color:#888;'>(평균 {market_data['avg_lockup_rate']}%)</span></div>", unsafe_allow_html=True)
 
     # ==========================================
-    # 2️⃣ 고객 맞춤 진단
+    # 2️⃣ 고객 맞춤 진단 & Supabase 보유 DB 내역 표시
     # ==========================================
     with st.container(border=True):
-        st.markdown(f"#### 2️⃣ {user_name} 고객 맞춤 정량 진단")
+        st.markdown(f"#### 2️⃣ {current_user} 고객 맞춤 정량 진단")
+        
+        # 1. 상단 진단 지표 카드
         p1, p2, p3, p4 = st.columns(4)
         p1.metric("AI 진단 결과", rec)
         p2.metric("추천 청약 전략", strategy)
-        p3.metric("과거 동일섹터 승률", "83.3%", delta="+20.8%p")
-        p4.metric("평균 보유 기간", "1.5일", delta="-12.5일")
+        p3.metric("과거 동일섹터 승률", "80.0%", delta="+17.5%p")
+        p4.metric("평균 보유 기간", "2.0일", delta="-12.0일")
+
+        st.divider()
+
+        # 2. 🌟 선택된 고객의 실제 Supabase DB 보유 종목 내역 🌟
+        st.markdown(f"##### 📋 {current_user} 고객 실시간 포트폴리오 (`USER_TRADE_INFO`)")
+        
+        # user_holdings는 사이드바에서 조회한 해당 고객의 실시간 DB 데이터
+        if user_holdings:
+            # 요약 메트릭
+            total_qty = sum(float(item.get("hold_qty") or 0) for item in user_holdings)
+            sectors = list({item.get("stbd_sector") for item in user_holdings if item.get("stbd_sector")})
+            
+            m_col1, m_col2, m_col3 = st.columns(3)
+            m_col1.caption(f"📌 **보유 종목 수:** {len(user_holdings)}개")
+            m_col2.caption(f"📌 **총 보유 수량:** {int(total_qty):,}주")
+            m_col3.caption(f"📌 **투자 섹터:** {', '.join(sectors)}")
+
+            # DB 내역 테이블 렌더링
+            df_display = pd.DataFrame(user_holdings)[["stbd_name", "stbd_code", "hold_qty", "stbd_sector"]]
+            df_display.columns = ["종목명 (stbd_name)", "종목코드 (stbd_code)", "보유수량 (hold_qty)", "섹터 (stbd_sector)"]
+            
+            # 수량 정수 및 천단위 콤마 포맷 적용
+            df_display["보유수량 (hold_qty)"] = df_display["보유수량 (hold_qty)"].apply(lambda x: f"{int(float(x)):,}주" if pd.notnull(x) else "-")
+
+            st.dataframe(
+                df_display,
+                use_container_width=True,
+                hide_index=True
+            )
+            st.caption("출처: Supabase PostgreSQL `USER_TRADE_INFO` 실시간 조회")
+        else:
+            st.info(f"💡 현재 **{current_user}** 고객님의 등록된 보유 주식 내역이 없습니다. 왼쪽 사이드바의 **'➕ 종목 매매/보유 내역 등록'**에서 종목을 추가해 보세요.")
 
     # ==========================================
     # 3️⃣ & 4️⃣ 시장 동향 & AI 주가/수익률 예측
@@ -291,8 +385,7 @@ if view_mode == "1. 📊 한눈에 보는 맞춤 리포트":
 # SECTION 2: 챗봇 형태 질의응답
 # ==========================================
 else:
-    user_name = "김투린"
-    st.subheader(f"💬 {company_info['company_name']} AI Q&A ({user_name} 고객님 전용)")
+    st.subheader(f"💬 {company_info['company_name']} AI Q&A ({current_user} 고객님 전용)")
 
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
@@ -304,7 +397,7 @@ else:
             st.markdown(user_query)
 
         system_instruction = f"""
-        당신은 {user_name} 고객님만을 위한 공모주 정량 분석 AI 챗봇입니다.
+        당신은 {current_user} 고객님만을 위한 공모주 정량 분석 AI 챗봇입니다.
         종목: {company_info['company_name']}
         공모가: {company_info['offering_price']:,}원
         기관경쟁률: {company_info['competition_rate']}:1
