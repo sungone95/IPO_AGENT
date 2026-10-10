@@ -6,19 +6,12 @@ from google.genai import types
 from config import DEFAULT_GEMINI_MODEL
 
 
-def get_user_transaction_history(user_id: str) -> Dict[str, Any]:
-    """[Mock/DB 연동 가능] 고객 매매 성향 및 과거 통계"""
-    return {
-        "user_id": user_id,
-        "user_name": "김투린",
-        "risk_profile": "공격투자형",
-        "total_capital": 50000000,
-        "sector_holding_stats": [
-            {"sector": "바이오/제약", "trade_count": 12, "avg_holding_days": 1.5, "win_rate": 83.3, "avg_return_rate": 24.5},
-            {"sector": "2차전지/소재", "trade_count": 5, "avg_holding_days": 14.0, "win_rate": 40.0, "avg_return_rate": -5.2},
-            {"sector": "IT/SaaS", "trade_count": 8, "avg_holding_days": 3.0, "win_rate": 62.5, "avg_return_rate": 11.8}
-        ]
-    }
+# tools/portfolio_tool.py 상단 수정
+from tools.user_db import get_user_profile_from_db
+
+def get_user_transaction_history(user_id: str = "김성원") -> Dict[str, Any]:
+    # Supabase USER_TRADE_INFO 테이블에서 실시간 조회
+    return get_user_profile_from_db(user_name=user_id)
 
 
 def get_market_trends() -> Dict[str, Any]:

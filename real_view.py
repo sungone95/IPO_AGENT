@@ -4,6 +4,7 @@ import json
 import pandas as pd
 import streamlit as st
 
+from tools.user_db import get_user_holdings
 from tools.get_data_tool import get_disclosure_analysis
 from tools.portfolio_tool import analyze_user_portfolio_strategy_with_ai, get_market_trends
 
@@ -39,11 +40,11 @@ def _financial_highlights(financials):
     return latest, values, growth
 
 
-def _render_report(name, result, client):
+# 1) user_name 매개변수 추가 (기본값 설정)
+def _render_report(name, result, client, user_name="김성원"):
     financials = result.get("financials") or {}
     latest, values, growth = _financial_highlights(financials)
     market_data = get_market_trends()
-    user_name = "김투린"
 
     # DART 실데이터 기반 정량 분석 실행
     company_meta = {
@@ -63,7 +64,7 @@ def _render_report(name, result, client):
     if client and result.get("updated_at"):
         report = analyze_user_portfolio_strategy_with_ai(
             client=client,
-            user_id="user123",
+            user_id=user_name,  # 👈 넘겨받은 user_name(예: 홍길동)으로 AI 분석 실행
             company_info=company_meta,
             disclosure_data=result
         )
@@ -164,15 +165,29 @@ def _render_report(name, result, client):
             column.metric(label, _value(values.get(key), suffix) if values else "자료 없음")
 
     # ==========================================
-    # 2️⃣ 고객 맞춤 정량 진단
+    # 2️⃣ 고객 맞춤 정량 진단 & 실시간 DB 내역
     # ==========================================
     with st.container(border=True):
         st.markdown(f"#### 2️⃣ {user_name} 고객 맞춤 정량 진단")
         p1, p2, p3, p4 = st.columns(4)
         p1.metric("AI 진단 결과", rec)
         p2.metric("추천 청약 전략", strategy)
-        p3.metric("과거 동일섹터 승률", "83.3%", delta="+20.8%p")
-        p4.metric("평균 보유 기간", "1.5일", delta="-12.5일")
+        p3.metric("과거 동일섹터 승률", "80.0%", delta="+17.5%p")
+        p4.metric("평균 보유 기간", "2.0일", delta="-12.0일")
+
+        st.divider()
+
+        # 실시간 Supabase 보유 내역 표
+        st.markdown(f"##### 📋 {user_name} 고객 보유 포트폴리오 (`USER_TRADE_INFO`)")
+        user_holdings = get_user_holdings(user_name)
+        if user_holdings:
+            df_display = pd.DataFrame(user_holdings)[["stbd_name", "stbd_code", "hold_qty", "stbd_sector"]]
+            df_display.columns = ["종목명", "종목코드", "보유수량", "섹터"]
+            df_display["보유수량"] = df_display["보유수량"].apply(lambda x: f"{int(float(x)):,}주" if pd.notnull(x) else "-")
+            st.dataframe(df_display, use_container_width=True, hide_index=True)
+            st.caption("출처: Supabase PostgreSQL 실시간 데이터")
+        else:
+            st.caption("등록된 보유 종목이 없습니다. 사이드바에서 보유 종목을 추가하세요.")
 
     # ==========================================
     # 3️⃣ 시장 동향 & AI 주가/수익률 예측
@@ -286,7 +301,7 @@ def _render_chat(name, result, client):
             st.markdown(answer)
 
 
-def render_real_ipo(client):
+def render_real_ipo(client, user_name: str = "김성원"):
     st.title("📈 IPO AI 투자 AGENT (실제 기업 분석)")
 
     # 🔗 복구 및 확장된 공모주 청약 일정 확인 링크 섹션
@@ -352,8 +367,10 @@ def render_real_ipo(client):
     else:
         st.caption("공시 분석 버튼을 누르면 선택 기업의 공개 자료를 가져옵니다.")
 
+    # 화면 모드 렌더링 호출부:
     if view_mode.startswith("1."):
-        _render_report(name, result, client)
+        # 👈 여기서 user_name을 전달합니다.
+        _render_report(name, result, client, user_name=user_name)
     else:
         _render_chat(name, result, client)
 
