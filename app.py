@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 from config import get_gemini_client, DEFAULT_GEMINI_MODEL
 from tools.portfolio_tool import analyze_user_portfolio_strategy_with_ai, get_market_trends
+from real_view import render_real_ipo
 
 # 1. 페이지 기본 설정 및 Client 초기화
 st.set_page_config(
@@ -11,7 +12,7 @@ st.set_page_config(
     layout="wide"
 )
 
-client = get_gemini_client()
+client = None
 
 st.markdown("""
     <style>
@@ -25,6 +26,19 @@ st.markdown("""
     .action-board {background-color: #f0f4f8; padding: 10px; border-radius: 8px; border-left: 5px solid #1E88E5;}
     </style>
 """, unsafe_allow_html=True)
+
+
+
+data_mode = st.radio("데이터 모드", ["실제 기업 분석", "데모 종목"], horizontal=True)
+if data_mode == "실제 기업 분석":
+    try:
+        client = get_gemini_client() if st.secrets.get("GEMINI_API_KEY") else None
+    except Exception:
+        client = None
+    render_real_ipo(client)
+    st.stop()
+client = get_gemini_client()
+st.info("데모 모드: 아래 기업·시장·고객 데이터와 예측 그래프는 예시 값입니다.")
 
 # 2. 정량 Mock 데이터
 UPCOMING_IPOS = {
@@ -144,14 +158,14 @@ if view_mode == "1. 📊 한눈에 보는 맞춤 리포트":
     # --- 실전 액션 보드 (치킨값 계산기 + 신호등 + 준비물) ---
     with st.container(border=True):
         st.markdown(f"#### 🍗 실전 투자 가이드: [{company_info['company_name']}]")
-        
+
         min_deposit = int((company_info['offering_price'] * company_info['min_quantity']) * 0.5)
         day1_return_rate = report.get("predicted_day1_return", 150.0)
         expected_profit_per_share = int(company_info['offering_price'] * (day1_return_rate / 100.0) - company_info['fee'])
         chicken_count = round(expected_profit_per_share / 23000, 1)
 
         b1, b2, b3 = st.columns([1.2, 1.3, 1.5], gap="medium")
-        
+
         with b1:
             st.metric(
                 label="💵 최소 준비금 (균등 10주)",
@@ -179,9 +193,9 @@ if view_mode == "1. 📊 한눈에 보는 맞춤 리포트":
     # ==========================================
     with st.container(border=True):
         st.markdown("#### 1️⃣ 핵심 지표 vs 시장·업계 평균 비교")
-        
+
         c_left, c_right = st.columns(2, gap="medium")
-        
+
         # 👈 [LEFT]: 기업 지표 (점유율 / 성장률)
         with c_left:
             st.markdown("##### 🏢 기업 경쟁력 vs 업계 평균")
@@ -241,7 +255,7 @@ if view_mode == "1. 📊 한눈에 보는 맞춤 리포트":
     # 3️⃣ & 4️⃣ 시장 동향 & AI 주가/수익률 예측
     # ==========================================
     st.markdown("#### 3️⃣ 시장 동향 & AI 주가/수익률 예측")
-    
+
     col_a, col_b, col_c = st.columns([1, 1, 1.2], gap="small")
 
     with col_a:
@@ -262,7 +276,7 @@ if view_mode == "1. 📊 한눈에 보는 맞춤 리포트":
             st.markdown("##### 🚀 AI 상장 당일 수익률 & 주가 예측")
             day1_ret = report.get("predicted_day1_return", 150.0)
             target_p = report.get("target_price", company_info['offering_price'] * 2.5)
-            
+
             r1, r2 = st.columns(2)
             r1.metric("상장일 예상 수익률", f"+{day1_ret:.0f}%", delta="과열 상한")
             r2.metric("목표 주가", f"{int(target_p):,}원")
@@ -270,7 +284,7 @@ if view_mode == "1. 📊 한눈에 보는 맞춤 리포트":
             future_dates = pd.date_range(start=pd.Timestamp.now(), periods=30, freq='D')
             base_p = company_info['offering_price'] * (1 + day1_ret / 100.0)
             predicted_prices = base_p + np.cumsum(np.random.normal(50, 300, 30))
-            
+
             st.line_chart(pd.DataFrame({"예측 주가(원)": predicted_prices}, index=future_dates), height=130)
 
 # ==========================================
@@ -297,7 +311,7 @@ else:
         의무보유확약: {company_info['lockup_rate']}%
         시장점유율: {company_info['market_share']}%
         주관사: {company_info['underwriter']}
-        
+
         초보 개미 투자자도 바로 이해할 수 있도록 명확한 수치로 간결하게 답변하세요.
         """
 

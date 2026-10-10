@@ -1,0 +1,243 @@
+"""데모 리포트의 구성을 따르는 실제 기업 화면."""
+
+import pandas as pd
+import streamlit as st
+
+from tools.get_data_tool import get_disclosure_analysis
+
+
+LABELS = {
+    "revenue": "매출액", "operating_profit": "영업이익", "net_income": "당기순이익",
+    "assets": "자산총계", "liabilities": "부채총계", "equity": "자본총계",
+    "operating_cash_flow": "영업현금흐름", "debt_ratio_pct": "부채비율(%)",
+    "operating_margin_pct": "영업이익률(%)", "net_margin_pct": "순이익률(%)",
+    "current_assets": "유동자산", "current_liabilities": "유동부채",
+    "current_ratio_pct": "유동비율(%)", "cash_flow_to_profit_pct": "영업현금흐름/순이익(%)",
+}
+
+
+def _value(value, suffix=""):
+    return f"{value:,.1f}{suffix}" if isinstance(value, float) else f"{value:,}{suffix}" if isinstance(value, int) else "자료 없음"
+
+
+def _financial_highlights(financials):
+    years = sorted(financials, reverse=True)
+    if not years:
+        return None, None, None
+    latest = years[0]
+    values = financials[latest]
+    growth = None
+    if len(years) >= 2:
+        oldest = years[-1]
+        start = financials[oldest].get("revenue")
+        end = values.get("revenue")
+        period = int(latest) - int(oldest)
+        if start and end and start > 0 and end > 0 and period > 0:
+            growth = ((end / start) ** (1 / period) - 1) * 100
+    return latest, values, growth
+
+
+def _render_report(name, result):
+    financials = result.get("financials") or {}
+    latest, values, growth = _financial_highlights(financials)
+    source = f"OpenDART {latest}년 정기 재무제표" if latest else "OpenDART 정기 재무제표 없음"
+
+    with st.container(border=True):
+        st.markdown(f"#### 🍗 실전 투자 가이드: [{name}]")
+        b1, b2, b3 = st.columns([1.2, 1.3, 1.5], gap="medium")
+        with b1:
+            st.metric("💵 최소 준비금 (균등 10주)", "자료 없음")
+            st.caption("🍗 1주 배정 시 예상 순익: 자료 없음")
+        with b2:
+            st.markdown("🚦 **투자 핵심 신호등**")
+            st.markdown("기관인기: **자료 없음** | 락업: **자료 없음**  \n유통물량: **자료 없음** | 구주매출: **자료 없음**")
+        with b3:
+            st.markdown("🏦 **청약 주관 증권사**")
+            st.write("자료 없음 (수수료: 자료 없음)")
+            st.caption("계좌 개설 조건: 자료 없음")
+        st.info("⏰ 상장일 아침 행동 요령: 자료 없음")
+
+    with st.container(border=True):
+        st.markdown("#### 1️⃣ 핵심 지표 vs 시장·업계 평균 비교")
+        left, right = st.columns(2, gap="medium")
+        with left:
+            st.markdown("##### 🏢 기업 경쟁력 vs 업계 평균")
+            first, second = st.columns(2)
+            with first:
+                st.caption("📌 **시장 점유율 (%)**")
+                st.metric(name, "자료 없음")
+                st.caption("업계 평균: 자료 없음")
+            with second:
+                st.caption("📌 **매출 성장률 (연평균)**")
+                st.metric(name, _value(round(growth, 1), "%") if growth is not None else "자료 없음")
+                if growth is not None:
+                    years = sorted(financials)
+                    st.caption(f"OpenDART 매출액 기준 · {years[0]}~{years[-1]}년")
+                else:
+                    st.caption("계산 가능한 연도별 매출액 없음")
+                st.caption("업계 평균: 자료 없음")
+        with right:
+            st.markdown("##### 🏛️ 기관 반응 vs 최근 공모주 평균")
+            first, second = st.columns(2)
+            with first:
+                st.caption("📌 **기관 경쟁률 (:1)**")
+                st.metric(name, "자료 없음")
+                st.caption("공모주 평균: 자료 없음")
+            with second:
+                st.caption("📌 **의무보유확약 (%)**")
+                st.metric(name, "자료 없음")
+                st.caption("공모주 평균: 자료 없음")
+        st.divider()
+        st.markdown("##### 📊 확인된 기업 재무지표")
+        m1, m2, m3, m4 = st.columns(4)
+        for column, label, key, suffix in (
+            (m1, "매출액", "revenue", "원"),
+            (m2, "영업이익률", "operating_margin_pct", "%"),
+            (m3, "부채비율", "debt_ratio_pct", "%"),
+            (m4, "유동비율", "current_ratio_pct", "%"),
+        ):
+            column.metric(label, _value(values.get(key), suffix) if values else "자료 없음")
+        st.caption(source)
+
+    with st.container(border=True):
+        st.markdown("#### 2️⃣ 고객 맞춤 정량 진단")
+        for column, label in zip(st.columns(4), ("AI 진단 결과", "추천 청약 전략", "과거 동일섹터 승률", "평균 보유 기간")):
+            column.metric(label, "자료 없음")
+        st.caption("고객 거래 기록이 연결되지 않았습니다.")
+
+    st.markdown("#### 3️⃣ 시장 동향 & AI 주가/수익률 예측")
+    a, b, c = st.columns([1, 1, 1.2], gap="small")
+    with a.container(border=True):
+        st.markdown("##### 📉 최근 IPO 수익률 (%)")
+        st.write("자료 없음")
+    with b.container(border=True):
+        st.markdown("##### 📈 최근 업종 지수")
+        st.write("자료 없음")
+    with c.container(border=True):
+        st.markdown("##### 🚀 AI 상장 당일 수익률 & 주가 예측")
+        r1, r2 = st.columns(2)
+        r1.metric("상장일 예상 수익률", "자료 없음")
+        r2.metric("목표 주가", "자료 없음")
+        st.caption("예측 주가 차트: 자료 없음")
+
+
+def _render_evidence(result):
+    with st.container(border=True):
+        st.markdown("#### 4️⃣ OpenDART 공시·재무 분석")
+        if result.get("error"):
+            st.warning(f"공시 조회 상태: {result['error']}")
+        if result.get("stale"):
+            st.caption(f"마지막 정상 공시 분석: {result.get('updated_at', '알 수 없음')}")
+        elif result.get("updated_at"):
+            st.caption(f"DART 기업코드 {result.get('corp_code', '')} · 조회 {result['updated_at']}")
+        st.markdown("##### 재무제표")
+        financials = result.get("financials") or {}
+        if financials:
+            table = pd.DataFrame({year: {
+                LABELS.get(metric, metric): _value(value)
+                for metric, value in metrics.items()
+            } for year, metrics in financials.items()}).fillna("")
+            st.dataframe(table, use_container_width=True)
+            st.caption("출처: OpenDART 정기 재무제표 · 열 제목은 회계연도 · 금액 단위 원")
+        else:
+            st.caption("OpenDART에서 확인 가능한 정기 재무제표가 없습니다.")
+        st.markdown("##### 사업·위험 요약")
+        summary = result.get("summary") or {}
+        st.markdown("**사업 내용**")
+        st.write(summary.get("business") or "자료 없음")
+        st.markdown("**위험 요인**")
+        st.write(summary.get("risks") or "자료 없음")
+        if summary.get("note"):
+            st.caption(summary["note"])
+        st.caption("AI 요약은 공시 원문과 함께 확인하세요.")
+        st.markdown("##### 확인한 공시")
+        filings = result.get("filings") or []
+        if not filings:
+            st.caption("최근 3년 내 조회된 증권신고서·투자설명서·정기보고서가 없습니다.")
+        for filing in filings:
+            st.markdown(f"- [{filing['title']}]({filing['url']}) · 접수번호 {filing['rcept_no']} · 접수일 {filing['rcept_dt']}")
+
+
+def _render_chat(name, result, client):
+    st.subheader(f"💬 {name} AI Q&A")
+    if client is None:
+        st.info("Gemini 키가 없어 AI Q&A를 사용할 수 없습니다.")
+        return
+    if not result.get("updated_at"):
+        st.info("공시 분석을 먼저 실행하면 확인된 자료를 바탕으로 질문할 수 있습니다.")
+        return
+    messages_key = f"real_messages_{name}_{result.get('corp_code', '')}"
+    messages = st.session_state.setdefault(messages_key, [])
+    for message in messages:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
+    if question := st.chat_input(f"{name}의 공시에 대해 질문하세요:"):
+        messages.append({"role": "user", "content": question})
+        with st.chat_message("user"):
+            st.markdown(question)
+        financials = result.get("financials") or {}
+        summary = result.get("summary") or {}
+        filings = result.get("filings") or []
+        context = {
+            "재무제표": financials,
+            "사업 내용": summary.get("business"),
+            "위험 요인": summary.get("risks"),
+            "공시": [{"제목": row["title"], "접수번호": row["rcept_no"]} for row in filings],
+        }
+        import json
+        instruction = (
+            f"{name}의 공개 공시를 설명하는 챗봇입니다. 다음 확인된 자료만 근거로 답하세요. "
+            "없는 공모 조건, 고객 거래 내역, 예상 수익률은 추측하지 말고 확인할 수 없다고 답하세요. "
+            "공시 요약은 AI 생성 정보이므로 원문 확인을 권하세요.\n"
+            + json.dumps(context, ensure_ascii=False) + f"\n질문: {question}"
+        )
+        try:
+            response = client.models.generate_content(model="gemini-2.5-flash", contents=instruction)
+            answer = response.text or "답변을 생성하지 못했습니다."
+        except Exception:
+            answer = "AI 답변을 생성하지 못했습니다. 잠시 후 다시 시도해 주세요."
+        messages.append({"role": "assistant", "content": answer})
+        with st.chat_message("assistant"):
+            st.markdown(answer)
+
+
+def render_real_ipo(client):
+    st.title("📈 IPO AI 투자 AGENT")
+    with st.container(border=True):
+        st.link_button("KIND 공모일정 열기", "https://kind.krx.co.kr/listinvstg/pubofrschdl.do?method=searchPubofrScholMain")
+        name = st.text_input("분석할 회사명", placeholder="KIND에서 확인한 회사명을 입력하세요").strip()
+    if not name:
+        st.info("회사명을 입력하면 해당 기업의 OpenDART 공시·재무 자료를 분석할 수 있습니다.")
+        return
+    view_mode = st.radio("서비스 선택:", ["1. 📊 한눈에 보는 맞춤 리포트", "2. 💬 AI 챗봇 1:1 Q&A"], horizontal=True)
+    st.divider()
+    try:
+        dart_key = st.secrets.get("DART_API_KEY")
+    except Exception:
+        dart_key = None
+    if st.button("선택 기업 공시 분석", type="primary"):
+        st.session_state["analysis_request"] = name
+    result = {}
+    if not dart_key:
+        st.info("공시 분석을 사용하려면 .streamlit/secrets.toml에 DART_API_KEY를 설정하세요.")
+    elif st.session_state.get("analysis_request") == name:
+        candidate_key = "dart_candidate_" + name
+        with st.spinner("OpenDART 공시와 재무제표를 확인하는 중..."):
+            result = get_disclosure_analysis(
+                {"kind_id": name, "company_name": name}, dart_key, client,
+                corp_code=st.session_state.get(candidate_key))
+        if result.get("candidates"):
+            choice = st.selectbox("DART 기업 선택", result["candidates"],
+                                  format_func=lambda item: f"{item['company_name']} ({item['corp_code']})")
+            if st.button("이 기업으로 분석"):
+                st.session_state[candidate_key] = choice["corp_code"]
+                st.rerun()
+            result = {}
+    else:
+        st.caption("공시 분석 버튼을 누르면 선택 기업의 공개 자료를 가져옵니다.")
+
+    if view_mode.startswith("1."):
+        _render_report(name, result)
+    else:
+        _render_chat(name, result, client)
+    _render_evidence(result)
