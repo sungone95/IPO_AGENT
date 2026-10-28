@@ -301,12 +301,12 @@ if view_mode == "1. 📊 한눈에 보는 맞춤 리포트":
                 st.markdown(f"<div style='text-align:center; font-weight:bold; font-size:0.85rem;'>{company_info['lockup_rate']}% <span style='color:#888;'>(평균 {market_data['avg_lockup_rate']}%)</span></div>", unsafe_allow_html=True)
 
     # ==========================================
-    # 2️⃣ 고객 맞춤 진단 & Supabase 보유 DB 내역 표시
+    # 2️⃣ 고객 맞춤 진단 & AI 추론 근거 파이프라인
     # ==========================================
     with st.container(border=True):
         st.markdown(f"#### 2️⃣ {current_user} 고객 맞춤 정량 진단")
         
-        # 1. 상단 진단 지표 카드
+        # 1. 상단 핵심 지표
         p1, p2, p3, p4 = st.columns(4)
         p1.metric("AI 진단 결과", rec)
         p2.metric("추천 청약 전략", strategy)
@@ -315,36 +315,65 @@ if view_mode == "1. 📊 한눈에 보는 맞춤 리포트":
 
         st.divider()
 
-        # 2. 🌟 선택된 고객의 실제 Supabase DB 보유 종목 내역 🌟
-        st.markdown(f"##### 📋 {current_user} 고객 실시간 포트폴리오 (`USER_TRADE_INFO`)")
-        
-        # user_holdings는 사이드바에서 조회한 해당 고객의 실시간 DB 데이터
+        # 2. 🌟 [핵심 추가] AI 3단계 논리 추론 파이프라인 (XAI / Explainable AI)
+        reasoning = report.get("reasoning_process", {})
+        score = report.get("score_breakdown", {})
+
+        st.markdown("##### 🧠 AI 추천 산출 프로세스 및 근거")
+        st.caption(f"💡 AI가 **{current_user}** 고객님의 Supabase 자산 데이터와 공모주 수치를 결합 분석한 3단계 경로입니다.")
+
+        c1, c2, c3 = st.columns(3, gap="medium")
+
+        # 1단계: 업종 연관성
+        with c1:
+            with st.container(border=True):
+                sec_align = reasoning.get("sector_alignment", {})
+                st.markdown("🎯 **1단계: 업종 친숙도**")
+                st.caption(f"**보유 자산 분석:**\n{sec_align.get('user_sector_experience', '분석 중...')}")
+                st.caption(f"**공모주 연계:**\n{sec_align.get('ipo_sector_match', '분석 중...')}")
+                impact1 = sec_align.get('score_impact', '0점')
+                st.markdown(f"**영향도:** `{impact1}`")
+
+        # 2단계: 포트폴리오 분산
+        with c2:
+            with st.container(border=True):
+                div = reasoning.get("portfolio_diversification", {})
+                st.markdown("⚖️ **2단계: 포트폴리오 분산**")
+                st.caption(f"**현재 집중도:**\n{div.get('current_concentration', '분석 중...')}")
+                st.caption(f"**헤지 효과:**\n{div.get('hedge_effect', '분석 중...')}")
+                impact2 = div.get('score_impact', '중립')
+                st.markdown(f"**영향도:** `{impact2}`")
+
+        # 3단계: 정량 허들
+        with c3:
+            with st.container(border=True):
+                q = reasoning.get("quantitative_hurdle", {})
+                st.markdown("📊 **3단계: 정량 허들 검증**")
+                st.caption(f"**수급 지표:**\n{q.get('metric_evaluated', '분석 중...')}")
+                st.caption(f"**성향 부합도:**\n{q.get('user_risk_tolerance', '분석 중...')}")
+                st.markdown(f"**판정:** `{q.get('conclusion', '검토 완료')}`")
+
+        # 4. 정량 점수 게이지 바 (있는 경우)
+        if score:
+            st.write("")
+            s1, s2, s3, s4 = st.columns(4)
+            s1.metric("업종 적합성 점수", f"{score.get('sector_fit', 0)}점")
+            s2.metric("재무 건전성 점수", f"{score.get('financial_health', 0)}점")
+            s3.metric("기관 수급 점수", f"{score.get('market_sentiment', 0)}점")
+            s4.metric("종합 매칭 평점", f"{score.get('total_score', 0)}점")
+
+        st.divider()
+
+        # 5. 고객 보유 주식 목록 (기존 유지)
+        st.markdown(f"##### 📋 {current_user} 고객 보유 포트폴리오 (`USER_TRADE_INFO`)")
         if user_holdings:
-            # 요약 메트릭
-            total_qty = sum(float(item.get("hold_qty") or 0) for item in user_holdings)
-            sectors = list({item.get("stbd_sector") for item in user_holdings if item.get("stbd_sector")})
-            
-            m_col1, m_col2, m_col3 = st.columns(3)
-            m_col1.caption(f"📌 **보유 종목 수:** {len(user_holdings)}개")
-            m_col2.caption(f"📌 **총 보유 수량:** {int(total_qty):,}주")
-            m_col3.caption(f"📌 **투자 섹터:** {', '.join(sectors)}")
-
-            # DB 내역 테이블 렌더링
             df_display = pd.DataFrame(user_holdings)[["stbd_name", "stbd_code", "hold_qty", "stbd_sector"]]
-            df_display.columns = ["종목명 (stbd_name)", "종목코드 (stbd_code)", "보유수량 (hold_qty)", "섹터 (stbd_sector)"]
-            
-            # 수량 정수 및 천단위 콤마 포맷 적용
-            df_display["보유수량 (hold_qty)"] = df_display["보유수량 (hold_qty)"].apply(lambda x: f"{int(float(x)):,}주" if pd.notnull(x) else "-")
-
-            st.dataframe(
-                df_display,
-                use_container_width=True,
-                hide_index=True
-            )
-            st.caption("출처: Supabase PostgreSQL `USER_TRADE_INFO` 실시간 조회")
+            df_display.columns = ["종목명", "코드", "보유수량", "섹터"]
+            st.dataframe(df_display, use_container_width=True, hide_index=True)
         else:
-            st.info(f"💡 현재 **{current_user}** 고객님의 등록된 보유 주식 내역이 없습니다. 왼쪽 사이드바의 **'➕ 종목 매매/보유 내역 등록'**에서 종목을 추가해 보세요.")
+            st.caption("등록된 보유 종목이 없습니다.")
 
+            
     # ==========================================
     # 3️⃣ & 4️⃣ 시장 동향 & AI 주가/수익률 예측
     # ==========================================

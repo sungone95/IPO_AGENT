@@ -1,375 +1,419 @@
-"""데모 리포트의 구성을 따르는 실제 기업 화면 (공모주 링크 및 OpenDART 연동)."""
+"""실제 증권사 DB(IPO_INFO_MASTER, 성과/업종 테이블) 기반 공모주 AI 분석 뷰 모듈."""
+from __future__ import annotations
 
-import json
-import pandas as pd
 import streamlit as st
-
-from tools.user_db import get_user_holdings
-from tools.get_data_tool import get_disclosure_analysis
-from tools.portfolio_tool import analyze_user_portfolio_strategy_with_ai, get_market_trends
-
-
-LABELS = {
-    "revenue": "매출액", "operating_profit": "영업이익", "net_income": "당기순이익",
-    "assets": "자산총계", "liabilities": "부채총계", "equity": "자본총계",
-    "operating_cash_flow": "영업현금흐름", "debt_ratio_pct": "부채비율(%)",
-    "operating_margin_pct": "영업이익률(%)", "net_margin_pct": "순이익률(%)",
-    "current_assets": "유동자산", "current_liabilities": "유동부채",
-    "current_ratio_pct": "유동비율(%)", "cash_flow_to_profit_pct": "영업현금흐름/순이익(%)",
-}
+import pandas as pd
+from tools.ipo_db import get_active_ipo_master_list, get_supabase_client
+from tools.batch_issue_updater import run_batch_update_issues
+from tools.user_db import get_user_profile_from_db
+from tools.ipo_advisor import generate_ipo_recommendation_from_db
 
 
-def _value(value, suffix=""):
-    return f"{value:,.1f}{suffix}" if isinstance(value, float) else f"{value:,}{suffix}" if isinstance(value, int) else "자료 없음"
+def _format_price(val) -> str:
+    """공모가 안전 포맷팅 헬퍼 (문자열, 쉼표, None 방어)"""
+    if not val:
+        return "미확정"
+    try:
+        clean_num = str(val).replace(",", "").replace("원", "").strip()
+        return f"{int(clean_num):,}원"
+    except (ValueError, TypeError):
+        return str(val)
 
 
-def _financial_highlights(financials):
-    years = sorted(financials, reverse=True)
-    if not years:
-        return None, {}, None
-    latest = years[0]
-    values = financials[latest]
-    growth = None
-    if len(years) >= 2:
-        oldest = years[-1]
-        start = financials[oldest].get("revenue")
-        end = values.get("revenue")
-        period = int(latest) - int(oldest)
-        if start and end and start > 0 and end > 0 and period > 0:
-            growth = ((end / start) ** (1 / period) - 1) * 100
-    return latest, values, growth
+def _render_market_trends_dashboard(target_sector_code: str):
+    """
+    표준 sector_code Key로 1:1 직접 조회하여 
+    최근 상장 10개 종목 첫날 성과 및 동종 산업군 주가 추세를 렌더링합니다.
+    """
+    supabase = get_supabase_client()
+    st.markdown("#### 📊 최근 공모주 시장 분위기 & 산업군 주가 추세")
+
+    tab_recent, tab_sector = st.tabs(["🔥 최근 10개 공모주 첫날 수익률", "📈 동종 산업군 기간별 주가 흐름"])
+
+    # --------------------------------------------------------------------------
+    # 탭 1: 최근 상장 10개 종목 첫날 성과 (IPO_RECENT_PERFORMANCE)
+    # --------------------------------------------------------------------------
+    with tab_recent:
+        try:
+            res_ipo = supabase.table("IPO_RECENT_PERFORMANCE") \
+                .select("stbd_name, day1_return_pct, day1_high_return_pct, listing_date, offering_price, close_price") \
+                .order("listing_date", desc=True) \
+                .limit(10) \
+                .execute()
+
+            if res_ipo.data:
+                df_ipo = pd.DataFrame(res_ipo.data)
+                avg_day1 = df_ipo["day1_return_pct"].mean()
+                avg_high = df_ipo["day1_high_return_pct"].mean()
+
+                m1, m2 = st.columns([1, 2])
+                with m1:
+                    st.metric("최근 10종목 평균 종가 수익률", f"+{avg_day1:.1f}%")
+                    st.metric("상장일 장중 최고가 평균 수익률", f"+{avg_high:.1f}%")
+                    st.caption("💡 공모가 대비 상장 첫날 장마감 기준 실측 평균 수익률입니다.")
+                with m2:
+                    chart_df = df_ipo.set_index("stbd_name")[["day1_return_pct", "day1_high_return_pct"]]
+                    chart_df.columns = ["첫날 종가 수익률(%)", "첫날 장중 최고(%)"]
+                    st.bar_chart(chart_df)
+
+                with st.expander("📋 최근 10개 공모주 첫날 상세 성적표 보기"):
+                    table_view = df_ipo[["stbd_name", "listing_date", "offering_price", "close_price", "day1_return_pct"]]
+                    table_view.columns = ["종목명", "상장일", "공모가(원)", "첫날 종가(원)", "수익률(%)"]
+                    st.dataframe(table_view, hide_index=True, use_container_width=True)
+            else:
+                st.caption("최근 상장 종목 성과 데이터가 없습니다.")
+        except Exception as e:
+            st.caption(f"최근 공모주 지표 로드 중 오류: {e}")
+
+    # --------------------------------------------------------------------------
+    # 탭 2: 표준 sector_code 기반 1:1 즉시 매칭 (SECTOR_TREND_PERFORMANCE)
+    # --------------------------------------------------------------------------
+    with tab_sector:
+        try:
+            # 🌟 복잡한 문자열 검색 없이 sector_code Key로 단일 행 1:1 즉각 조회
+            query_code = target_sector_code if target_sector_code else "SEC_MEDIA"
+            res_sector = supabase.table("SECTOR_TREND_PERFORMANCE") \
+                .select("*") \
+                .eq("sector_code", query_code) \
+                .limit(1) \
+                .execute()
+
+            if res_sector.data:
+                row = res_sector.data[0]
+                sentiment_icon = "🟢" if row["market_sentiment"] == "강세" else ("🔴" if row["market_sentiment"] == "조정" else "🟡")
+
+                st.info(f"{sentiment_icon} **[{row['sector_name']}]** 업종 평가: **{row['market_sentiment']}** (분류코드: `{row['sector_code']}` | 지수: `{row['benchmark_index']}`)")
+                st.caption(f"💡 {row['trend_summary']}")
+
+                # 4대 기간별 수익률 지표 카드
+                p1, p2, p3, p4 = st.columns(4)
+                p1.metric("최근 1주일", f"{float(row['return_1w_pct']):+}%")
+                p2.metric("최근 1개월", f"{float(row['return_1m_pct']):+}%")
+                p3.metric("최근 6개월", f"{float(row['return_6m_pct']):+}%")
+                p4.metric("최근 1년", f"{float(row['return_1y_pct']):+}%")
+
+                # 기간별 주가 수익률 추세 라인 차트
+                trend_df = pd.DataFrame({
+                    "기간": ["1주일", "1개월", "6개월", "1년"],
+                    "누적 수익률(%)": [
+                        float(row["return_1w_pct"]),
+                        float(row["return_1m_pct"]),
+                        float(row["return_6m_pct"]),
+                        float(row["return_1y_pct"])
+                    ]
+                }).set_index("기간")
+                st.line_chart(trend_df)
+            else:
+                st.caption(f"코드 `{query_code}`에 해당하는 산업군 주가 흐름 데이터가 없습니다.")
+        except Exception as e:
+            st.caption(f"산업군 주가 지표 로드 중 오류: {e}")
 
 
-# 1) user_name 매개변수 추가 (기본값 설정)
-def _render_report(name, result, client, user_name="김성원"):
-    financials = result.get("financials") or {}
-    latest, values, growth = _financial_highlights(financials)
-    market_data = get_market_trends()
+def _render_evidence(result: dict):
+    """
+    원천 JSON 덤프 대신 초보자도 직관적으로 검증할 수 있는 
+    구조화된 팩트 체크 대시보드 뷰어 (영업이익률 미니 차트 포함)
+    """
+    with st.expander("🔍 분석 근거 원천 팩트 데이터 검증 (증권사 DB 기준)", expanded=False):
+        st.caption("AI가 임의로 지어내지 않고 분석의 기초로 삼은 증권사 DB 공식 수치입니다.")
 
-    # DART 실데이터 기반 정량 분석 실행
-    company_meta = {
+        ipo_terms = result.get("ipo_terms") or result.get("ipo_metrics") or {}
+        fin_history = result.get("financial_history") or result.get("financials") or {}
+        biz_analysis = result.get("business_analysis") or {}
+
+        # 1. 공모 조건 명세표
+        st.markdown("##### 📌 1. 확정 공모 조건 명세")
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            st.markdown(f"- **기업명 / 업종:** {result.get('company_name', '-')} ({result.get('sector', '-')})")
+            st.markdown(f"- **표준 산업분류코드:** `{result.get('sector_code', '-')}`")
+            st.markdown(f"- **희망 공모가 밴드:** {ipo_terms.get('price_band') or '확인 필요'}")
+        with c2:
+            st.markdown(f"- **최종 확정 공모가:** {_format_price(ipo_terms.get('offering_price'))}")
+            st.markdown(f"- **청약 일정:** {ipo_terms.get('subscription_date') or '미정'}")
+            st.markdown(f"- **상장 예정일:** {ipo_terms.get('listing_date') or '미정'}")
+        with c3:
+            comp_txt = f"{float(ipo_terms.get('competition_rate')):,.1f} : 1" if ipo_terms.get('competition_rate') else "수요예측 전"
+            lock_txt = f"{float(ipo_terms.get('lockup_rate'))}%" if ipo_terms.get('lockup_rate') else "확인 전"
+            st.markdown(f"- **주관 증권사:** {ipo_terms.get('underwriter') or '공시 확인 필요'}")
+            st.markdown(f"- **기관 경쟁률:** {comp_txt}")
+            st.markdown(f"- **의무보유확약(락업):** {lock_txt}")
+
+        st.divider()
+
+        # 2. 최근 3개년 재무 실적 현황 및 영업이익률 미니 차트
+        st.markdown("##### 📈 2. 최근 3개년 재무 실적 및 영업이익률 추이")
+        if fin_history:
+            fin_rows = []
+            chart_dict = {}
+
+            for year in sorted(fin_history.keys()):
+                metrics = fin_history[year]
+                rev_growth = metrics.get("revenue_growth_pct")
+                op_margin = metrics.get("operating_margin_pct")
+                debt_ratio = metrics.get("debt_ratio_pct")
+
+                fin_rows.append({
+                    "사업연도": f"{year}년",
+                    "매출 성장률": f"{rev_growth:+.1f}%" if rev_growth is not None else "-",
+                    "영업이익률": f"{op_margin:.1f}%" if op_margin is not None else "-",
+                    "부채비율": f"{debt_ratio:.1f}%" if debt_ratio is not None else "-"
+                })
+
+                if op_margin is not None:
+                    chart_dict[f"{year}년"] = float(op_margin)
+
+            col_table, col_chart = st.columns([3, 2])
+            with col_table:
+                df_fin = pd.DataFrame(fin_rows)
+                st.dataframe(df_fin, hide_index=True, use_container_width=True)
+
+            with col_chart:
+                if chart_dict:
+                    df_op = pd.DataFrame(
+                        list(chart_dict.values()), 
+                        index=list(chart_dict.keys()), 
+                        columns=["영업이익률(%)"]
+                    )
+                    st.bar_chart(df_op, use_container_width=True)
+                    latest_margin = list(chart_dict.values())[-1]
+                    status_text = "🟢 흑자 경영 유지 중" if latest_margin > 0 else "🔴 영업적자 (기술특례 등)"
+                    st.caption(f"💡 최근 결산 기준 **{latest_margin:.1f}%** ({status_text})")
+        else:
+            st.info("등록된 3개년 재무 데이터가 없습니다.")
+
+        st.divider()
+
+        # 3. 사업 내용 및 위험 요인
+        st.markdown("##### 🛡️ 3. 사업 내용 및 핵심 위험 팩트")
+        col_biz, col_risk = st.columns(2)
+        with col_biz:
+            st.markdown("**💡 무슨 사업으로 돈을 버는가?**")
+            st.write(biz_analysis.get("business_summary") or "등록된 사업 설명 없음")
+            diff = biz_analysis.get("peer_differentiation")
+            if diff and diff != "자료 없음":
+                st.caption(f"**경쟁사 대비 차별점:** {diff}")
+
+        with col_risk:
+            st.markdown("**⚠️ 공시 서류 상 가장 큰 위험 요인은?**")
+            st.write(biz_analysis.get("investment_risks") or "등록된 위험 공시 없음")
+            sentiment = biz_analysis.get("market_sentiment")
+            if sentiment and sentiment != "자료 없음":
+                st.caption(f"**증권가 시장 분위기:** {sentiment}")
+
+
+def _render_report(name: str, result: dict, client, user_name: str = "김성원"):
+    """DART/DB 실데이터 + 초보자용 AI 진단 + 시장/산업 흐름 대시보드 렌더링"""
+    ipo_terms = result.get("ipo_terms") or result.get("ipo_metrics") or {}
+    biz_analysis = result.get("business_analysis") or {}
+    sector = result.get("sector", "업종 미분류")
+    sector_code = result.get("sector_code", "SEC_MEDIA")
+
+    user_profile = get_user_profile_from_db(user_name=user_name)
+    company_record = {
         "company_name": name,
-        "sector": "일반/첨단기술",
-        "offering_price": 25000,
-        "competition_rate": 890,
-        "lockup_rate": 42.0,
-        "min_quantity": 10,
-        "underwriter": "주관 증권사",
-        "fee": 2000,
-        "account_open_rule": "청약 당일 비대면 개설 가능",
-        "listing_date": "상장 예정일"
+        "sector": sector,
+        "sector_code": sector_code,
+        "raw_info": result
     }
 
-    report = {}
-    if client and result.get("updated_at"):
-        report = analyze_user_portfolio_strategy_with_ai(
-            client=client,
-            user_id=user_name,  # 👈 넘겨받은 user_name(예: 홍길동)으로 AI 분석 실행
-            company_info=company_meta,
-            disclosure_data=result
+    # 1. AI 1:1 맞춤 진단 결과 생성
+    report = generate_ipo_recommendation_from_db(
+        client=client,
+        user_profile=user_profile,
+        company_record=company_record
+    )
+
+    # [영역 1] 기업 핵심 공모 정보 카드
+    with st.container(border=True):
+        st.markdown(f"### 🏢 {name} 공모 정보 및 핵심 강점")
+        underwriter_txt = ipo_terms.get("underwriter") or "공시 확인 필요"
+        st.caption(f"업종: **{sector}** (표준코드: `{sector_code}`) | 청약 주관사: **{underwriter_txt}**")
+
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("확정 공모가", _format_price(ipo_terms.get("offering_price")))
+        c2.metric("기관 경쟁률", f"{float(ipo_terms.get('competition_rate')):,.1f}:1" if ipo_terms.get("competition_rate") else "확인 전")
+        c3.metric(
+            "기관 주식 미매도 약속",
+            f"{float(ipo_terms.get('lockup_rate'))}%" if ipo_terms.get("lockup_rate") else "확인 전",
+            help="상장일 기관들이 주식을 바로 팔지 않겠다고 약속한 비중입니다. 높을수록 첫날 급락을 방어해 줍니다."
         )
+        c4.metric("상장 예정일", ipo_terms.get("listing_date") or "일정 확인 전")
 
-    rec = report.get("recommendation", "공시 확인 필요")
-    strategy = report.get("strategy_type", "균등 배정 전용")
-    traffic = report.get("traffic_lights", {"institution": "🟢", "lockup": "🟢", "financial": "🟢", "risks": "🟡"})
-    day1_ret = report.get("predicted_day1_return", 130.0)
+        biz_desc = biz_analysis.get("business_summary")
+        if biz_desc and biz_desc != "자료 없음":
+            st.divider()
+            st.markdown(f"**💡 무슨 일로 돈을 버는 회사인가요?**\n\n{biz_desc}")
 
-    # 1주 배정 시 예상 치킨값 계산
-    expected_profit = int(company_meta['offering_price'] * (day1_ret / 100.0) - company_meta['fee'])
-    chicken_count = round(expected_profit / 23000, 1)
+        strengths = biz_analysis.get("strengths") or []
+        if strengths:
+            st.markdown("**🚀 이 회사의 핵심 강점 (차별화 포인트)**")
+            for item in strengths:
+                st.markdown(f"- {item}")
 
-    # --- 🍗 초보 개미 실전 투자 가이드 보드 ---
+        latest_issues = biz_analysis.get("latest_news_issues", [])
+        if latest_issues:
+            st.divider()
+            st.markdown("📰 **오늘 아침 수집된 최신 시장 반응 (3줄 요약)**")
+            for issue in latest_issues:
+                st.markdown(f"- {issue}")
+
+    # [영역 2] 🌟 sector_code를 전달하여 1:1 정확한 산업군 차트 렌더링
+    st.divider()
     with st.container(border=True):
-        st.markdown(f"#### 🍗 실전 투자 가이드: [{name}]")
-        b1, b2, b3 = st.columns([1.2, 1.3, 1.5], gap="medium")
-        with b1:
-            st.metric("💵 최소 준비금 (균등 10주)", f"{int(company_meta['offering_price'] * 10 * 0.5):,}원")
-            st.caption(f"🍗 1주 배정 시 예상 순익: **+{expected_profit:,}원** (치킨 {chicken_count}마리)")
-        with b2:
-            st.markdown("🚦 **실데이터 투자 핵심 신호등**")
-            st.markdown(f"""
-            - 재무건전: **{traffic.get('financial', '🟢')}** | 공시위험: **{traffic.get('risks', '🟡')}**  
-            - 기관인기: **{traffic.get('institution', '🟢')}** | 락업비율: **{traffic.get('lockup', '🟢')}**
-            """)
-        with b3:
-            st.markdown("🏦 **청약 주관 증권사**")
-            st.write(f"{company_meta['underwriter']} (수수료: {company_meta['fee']:,}원)")
-            st.caption(f"📌 {company_meta['account_open_rule']}")
-        
-        guide_text = report.get("morning_guide", "상장일 아침 8시 40분 ~ 9시 호가 확인 후 시초가 급등 시 조기 분할 매도로 수익을 확정하세요.")
-        st.info(f"⏰ **상장일 아침 8시 40분 행동 요령:** {guide_text}")
+        _render_market_trends_dashboard(target_sector_code=sector_code)
 
-    # ==========================================
-    # 1️⃣ 핵심 지표 vs 시장·업계 평균 비교 (막대그래프)
-    # ==========================================
+    # [영역 3] 초보자 1:1 맞춤 청약 가이드
+    st.divider()
     with st.container(border=True):
-        st.markdown("#### 1️⃣ 핵심 지표 vs 시장·업계 평균 비교")
-        left, right = st.columns(2, gap="medium")
-        
-        with left:
-            st.markdown("##### 🏢 기업 경쟁력 vs 업계 평균")
-            first, second = st.columns(2)
-            
-            actual_op = values.get("operating_margin_pct", 15.0) if values else 15.0
-            avg_op = market_data.get("avg_operating_margin", 12.0)
-            with first:
-                st.caption("📌 **영업이익률 (%)**")
-                op_df = pd.DataFrame({
-                    "구분": [name, "업계 평균"],
-                    "영업이익률(%)": [actual_op, avg_op]
-                }).set_index("구분")
-                st.bar_chart(op_df, height=210, color=["#1E88E5"])
-                st.markdown(f"<div style='text-align:center; font-weight:bold; font-size:0.85rem;'>{actual_op}% <span style='color:#888;'>(평균 {avg_op}%)</span></div>", unsafe_allow_html=True)
+        st.markdown(f"### 🎯 `{user_name}` 고객님 맞춤형 청약 진단")
 
-            actual_growth = round(growth, 1) if growth is not None else 35.0
-            avg_growth = 28.0
-            with second:
-                st.caption("📌 **매출 성장률 (%)**")
-                growth_df = pd.DataFrame({
-                    "구분": [name, "업계 평균"],
-                    "성장률(%)": [actual_growth, avg_growth]
-                }).set_index("구분")
-                st.bar_chart(growth_df, height=210, color=["#43A047"])
-                st.markdown(f"<div style='text-align:center; font-weight:bold; font-size:0.85rem;'>+{actual_growth}% <span style='color:#888;'>(평균 +{avg_growth}%)</span></div>", unsafe_allow_html=True)
-
-        with right:
-            st.markdown("##### 🏛️ 기관 반응 vs 최근 공모주 평균")
-            first, second = st.columns(2)
-            with first:
-                st.caption("📌 **기관 경쟁률 (:1)**")
-                comp_df = pd.DataFrame({
-                    "구분": [name, "공모주 평균"],
-                    "경쟁률": [company_meta["competition_rate"], market_data["avg_competition_rate"]]
-                }).set_index("구분")
-                st.bar_chart(comp_df, height=210, color=["#FB8C00"])
-                st.markdown(f"<div style='text-align:center; font-weight:bold; font-size:0.85rem;'>{company_meta['competition_rate']:,}:1 <span style='color:#888;'>(평균 {market_data['avg_competition_rate']:,}:1)</span></div>", unsafe_allow_html=True)
-
-            with second:
-                st.caption("📌 **의무보유확약 (%)**")
-                lock_df = pd.DataFrame({
-                    "구분": [name, "공모주 평균"],
-                    "확약비율(%)": [company_meta["lockup_rate"], market_data["avg_lockup_rate"]]
-                }).set_index("구분")
-                st.bar_chart(lock_df, height=210, color=["#8E24AA"])
-                st.markdown(f"<div style='text-align:center; font-weight:bold; font-size:0.85rem;'>{company_meta['lockup_rate']}% <span style='color:#888;'>(평균 {market_data['avg_lockup_rate']}%)</span></div>", unsafe_allow_html=True)
+        rec_color = "🟢" if "추천" in report.get("recommendation", "") else ("🔴" if "보류" in report.get("recommendation", "") else "🟡")
+        r_col1, r_col2 = st.columns([1, 2])
+        with r_col1:
+            st.subheader(f"{rec_color} {report.get('recommendation', '신중 청약')}")
+            st.caption(f"권장 청약 전략: **{report.get('strategy_type', '소액 균등')}**")
+        with r_col2:
+            t_lights = report.get("traffic_lights", {})
+            t1, t2, t3, t4 = st.columns(4)
+            t1.metric("기관 관심도", t_lights.get("institution", "🟡"))
+            t2.metric("첫날 급락방어", t_lights.get("lockup", "🟡"))
+            t3.metric("회사 재무건전", t_lights.get("financial", "🟡"))
+            t4.metric("최신 시장이슈", t_lights.get("issues", "🟡"))
 
         st.divider()
-        st.markdown(f"##### 📊 확인된 최신 결산 재무지표 ({latest}년 기준)")
-        m1, m2, m3, m4 = st.columns(4)
-        for column, label, key, suffix in (
-            (m1, "매출액", "revenue", "원"),
-            (m2, "영업이익률", "operating_margin_pct", "%"),
-            (m3, "부채비율", "debt_ratio_pct", "%"),
-            (m4, "유동비율", "current_ratio_pct", "%"),
-        ):
-            column.metric(label, _value(values.get(key), suffix) if values else "자료 없음")
+        st.markdown(f"**1. 내 기존 주식 바구니와의 궁합**\n\n{report.get('portfolio_match')}")
+        st.markdown(f"**2. 회사 살림살이 안전성 (재무)**\n\n{report.get('financial_status')}")
+        st.markdown(f"**3. 내 통장 잔고 맞춤 자금 전략**\n\n{report.get('capital_action')}")
 
-    # ==========================================
-    # 2️⃣ 고객 맞춤 정량 진단 & 실시간 DB 내역
-    # ==========================================
-    with st.container(border=True):
-        st.markdown(f"#### 2️⃣ {user_name} 고객 맞춤 정량 진단")
-        p1, p2, p3, p4 = st.columns(4)
-        p1.metric("AI 진단 결과", rec)
-        p2.metric("추천 청약 전략", strategy)
-        p3.metric("과거 동일섹터 승률", "80.0%", delta="+17.5%p")
-        p4.metric("평균 보유 기간", "2.0일", delta="-12.0일")
-
-        st.divider()
-
-        # 실시간 Supabase 보유 내역 표
-        st.markdown(f"##### 📋 {user_name} 고객 보유 포트폴리오 (`USER_TRADE_INFO`)")
-        user_holdings = get_user_holdings(user_name)
-        if user_holdings:
-            df_display = pd.DataFrame(user_holdings)[["stbd_name", "stbd_code", "hold_qty", "stbd_sector"]]
-            df_display.columns = ["종목명", "종목코드", "보유수량", "섹터"]
-            df_display["보유수량"] = df_display["보유수량"].apply(lambda x: f"{int(float(x)):,}주" if pd.notnull(x) else "-")
-            st.dataframe(df_display, use_container_width=True, hide_index=True)
-            st.caption("출처: Supabase PostgreSQL 실시간 데이터")
-        else:
-            st.caption("등록된 보유 종목이 없습니다. 사이드바에서 보유 종목을 추가하세요.")
-
-    # ==========================================
-    # 3️⃣ 시장 동향 & AI 주가/수익률 예측
-    # ==========================================
-    st.markdown("#### 3️⃣ 시장 동향 & AI 주가/수익률 예측")
-    a, b, c = st.columns([1, 1, 1.2], gap="small")
-    with a.container(border=True):
-        st.markdown("##### 📉 최근 IPO 수익률 (%)")
-        ipo_df = pd.DataFrame(market_data["recent_ipo_performances"]).set_index("name")
-        st.bar_chart(ipo_df["return_rate"], height=130)
-
-    with b.container(border=True):
-        st.markdown("##### 📈 최근 업종 지수")
-        dates = pd.date_range(end=pd.Timestamp.now(), periods=30, freq='D')
-        sector_trend = [100 + i * 0.8 for i in range(30)]
-        st.line_chart(pd.DataFrame({"지수": sector_trend}, index=dates), height=130)
-
-    with c.container(border=True):
-        st.markdown("##### 🚀 AI 상장 당일 수익률 & 주가 예측")
-        r1, r2 = st.columns(2)
-        r1.metric("상장일 예상 수익률", f"+{day1_ret:.0f}%", delta="과열 상한")
-        r2.metric("목표 주가", f"{int(company_meta['offering_price'] * (1 + day1_ret / 100)):,}원")
-        
-        future_dates = pd.date_range(start=pd.Timestamp.now(), periods=30, freq='D')
-        base_p = company_meta['offering_price'] * (1 + day1_ret / 100.0)
-        predicted_prices = [base_p + (i * 250) for i in range(30)]
-        st.line_chart(pd.DataFrame({"예측 주가(원)": predicted_prices}, index=future_dates), height=130)
+        if report.get("morning_tip"):
+            st.success(f"🔔 **상장일 아침 행동 가이드:** {report.get('morning_tip')}")
 
 
-def _render_evidence(result):
-    with st.container(border=True):
-        st.markdown("#### 4️⃣ OpenDART 공시·재무 원문 근거")
-        if result.get("error"):
-            st.warning(f"공시 조회 상태: {result['error']}")
-        if result.get("stale"):
-            st.caption(f"마지막 정상 공시 분석: {result.get('updated_at', '알 수 없음')}")
-        elif result.get("updated_at"):
-            st.caption(f"DART 기업코드 {result.get('corp_code', '')} · 조회 {result['updated_at']}")
-        
-        st.markdown("##### 재무제표")
-        financials = result.get("financials") or {}
-        if financials:
-            table = pd.DataFrame({year: {
-                LABELS.get(metric, metric): _value(value)
-                for metric, value in metrics.items()
-            } for year, metrics in financials.items()}).fillna("")
-            st.dataframe(table, use_container_width=True)
-            st.caption("출처: OpenDART 정기 재무제표 · 열 제목은 회계연도 · 금액 단위 원")
-        else:
-            st.caption("OpenDART에서 확인 가능한 정기 재무제표가 없습니다.")
+def _render_chat(name: str, result: dict, client):
+    """선택 종목 1:1 AI 질의응답 챗봇"""
+    st.markdown(f"#### 💬 `{name}` 공모주 무엇이든 물어보세요")
+    st.caption("전문 용어 없이 초보자 눈높이로 쉽게 답변해 드립니다.")
 
-        st.markdown("##### 사업·위험 요약")
-        summary = result.get("summary") or {}
-        st.markdown("**사업 내용**")
-        st.write(summary.get("business") or "자료 없음")
-        st.markdown("**위험 요인**")
-        st.write(summary.get("risks") or "자료 없음")
-        if summary.get("note"):
-            st.caption(summary["note"])
+    if "chat_history" not in st.session_state:
+        st.session_state["chat_history"] = []
 
-        st.markdown("##### 확인한 공시")
-        filings = result.get("filings") or []
-        if not filings:
-            st.caption("최근 3년 내 조회된 증권신고서·투자설명서·정기보고서가 없습니다.")
-        for filing in filings:
-            st.markdown(f"- [{filing['title']}]({filing['url']}) · 접수번호 {filing['rcept_no']} · 접수일 {filing['rcept_dt']}")
+    for msg in st.session_state["chat_history"]:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
 
-
-def _render_chat(name, result, client):
-    st.subheader(f"💬 {name} AI Q&A")
-    if client is None:
-        st.info("Gemini 키가 없어 AI Q&A를 사용할 수 없습니다.")
-        return
-    if not result.get("updated_at"):
-        st.info("공시 분석을 먼저 실행하면 확인된 자료를 바탕으로 질문할 수 있습니다.")
-        return
-
-    messages_key = f"real_messages_{name}_{result.get('corp_code', '')}"
-    messages = st.session_state.setdefault(messages_key, [])
-    for message in messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
-
-    if question := st.chat_input(f"{name}의 공시에 대해 질문하세요:"):
-        messages.append({"role": "user", "content": question})
+    if user_prompt := st.chat_input("예: 이 회사 상장 첫날 바로 파는 게 좋을까?"):
+        st.session_state["chat_history"].append({"role": "user", "content": user_prompt})
         with st.chat_message("user"):
-            st.markdown(question)
+            st.markdown(user_prompt)
 
-        financials = result.get("financials") or {}
-        summary = result.get("summary") or {}
-        filings = result.get("filings") or []
-        context = {
-            "재무제표": financials,
-            "사업 내용": summary.get("business"),
-            "위험 요인": summary.get("risks"),
-            "공시": [{"제목": row["title"], "접수번호": row["rcept_no"]} for row in filings],
-        }
-
-        instruction = (
-            f"{name}의 공개 공시를 설명하는 챗봇입니다. 다음 확인된 자료만 근거로 답하세요. "
-            "없는 공모 조건, 고객 거래 내역, 예상 수익률은 추측하지 말고 확인할 수 없다고 답하세요.\n"
-            + json.dumps(context, ensure_ascii=False) + f"\n질문: {question}"
-        )
-        try:
-            response = client.models.generate_content(model="gemini-2.5-flash", contents=instruction)
-            answer = response.text or "답변을 생성하지 못했습니다."
-        except Exception:
-            answer = "AI 답변을 생성하지 못했습니다. 잠시 후 다시 시도해 주세요."
-        messages.append({"role": "assistant", "content": answer})
         with st.chat_message("assistant"):
-            st.markdown(answer)
+            system_ctx = f"종목명: {name}, 업종: {result.get('sector')}, 표준코드: {result.get('sector_code')}, 공모정보: {result.get('ipo_terms')}, 재무/사업: {result.get('business_analysis')}"
+            full_prompt = f"다음 공모주 데이터를 바탕으로 질문에 주식 초보자 눈높이로 친절하고 솔직하게 2~3문장으로 답하세요.\n\n[데이터]\n{system_ctx}\n\n[질문]\n{user_prompt}"
+            res = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=full_prompt
+            )
+            bot_reply = res.text.strip()
+            st.markdown(bot_reply)
+            st.session_state["chat_history"].append({"role": "assistant", "content": bot_reply})
 
 
 def render_real_ipo(client, user_name: str = "김성원"):
     st.title("📈 IPO AI 투자 AGENT (실제 기업 분석)")
 
-    # 🔗 복구 및 확장된 공모주 청약 일정 확인 링크 섹션
+    # 사이드바: 관리자 패널
+    with st.sidebar:
+        st.markdown("### ⚙️ 데이터 관리자 패널")
+        st.caption("공모주 일정/재무는 DB 데이터를 사용하며, 최신 시장 반응/이슈만 웹(Tavily)에서 수집합니다.")
+        if st.button("🔄 최신 시장 이슈 즉시 업데이트", help="등록된 전 종목의 최신 언론/기관 반응을 Tavily로 갱신합니다."):
+            with st.spinner("최신 시장 반응 및 뉴스 요약을 DB에 반영하는 중..."):
+                run_batch_update_issues(client)
+            st.success("✅ 최신 시장 이슈 업데이트 완료!")
+            st.rerun()
+
+    # 링크 섹션
     with st.container(border=True):
         st.markdown("##### 📌 공모주 청약 일정 & 공모 정보 확인 링크")
         link_col1, link_col2, link_col3 = st.columns(3)
         with link_col1:
-            st.link_button(
-                "🏛️ KIND 공모일정 (KRX)",
-                "https://kind.krx.co.kr/listinvstg/pubofrschdl.do?method=searchPubofrScholMain",
-                use_container_width=True
-            )
+            st.link_button("🏛️ KIND 공모일정 (KRX)", "https://kind.krx.co.kr/listinvstg/pubofrschdl.do?method=searchPubofrScholMain", use_container_width=True)
         with link_col2:
-            st.link_button(
-                "📊 38커뮤니케이션 청약일정",
-                "http://www.38.co.kr/html/fund/index.htm?o=k",
-                use_container_width=True
-            )
+            st.link_button("📊 38커뮤니케이션 청약일정", "http://www.38.co.kr/html/fund/index.htm?o=k", use_container_width=True)
         with link_col3:
-            st.link_button(
-                "🟢 네이버페이 증권 공모주",
-                "https://finance.naver.com/sise/ipo.naver",
-                use_container_width=True
-            )
+            st.link_button("🟢 네이버페이 증권 공모주", "https://finance.naver.com/sise/ipo.naver", use_container_width=True)
 
-        name = st.text_input("분석할 회사명", placeholder="위 사이트에서 확인한 기업명을 입력하세요 (예: 이노스페이스, 시프트업)").strip()
+        ipo_list = get_active_ipo_master_list()
+        if not ipo_list:
+            st.warning("현재 DB에 등록된 활성 공모주 종목이 없습니다. 관리자 DB를 확인해 주세요.")
+            return
 
-    if not name:
-        st.info("회사명을 입력하면 해당 기업의 OpenDART 공시·재무 자료를 분석할 수 있습니다.")
-        return
+        company_names = [item["company_name"] for item in ipo_list]
+        name_to_meta = {item["company_name"]: item for item in ipo_list}
 
+        name = st.selectbox(
+            "분석할 공모주 선택",
+            options=company_names,
+            index=0 if company_names else None,
+            help="종목명을 입력하면 DB에 등록된 종목이 필터링됩니다."
+        )
+
+        target_meta = name_to_meta.get(name, {})
+        raw_info = target_meta.get("raw_info", {})
+        terms = raw_info.get("ipo_terms", {})
+
+        sector_str = target_meta.get("sector") or "미분류"
+        sector_code_str = target_meta.get("sector_code") or "SEC_MEDIA"
+        price_str = _format_price(terms.get("offering_price"))
+        underwriter_str = terms.get("underwriter") or "공시 확인 필요"
+
+        st.caption(f"업종: **{sector_str}** (`{sector_code_str}`) | 공모가: **{price_str}** | 주관사: **{underwriter_str}**")
+
+    # 뷰 모드 선택
     view_mode = st.radio("서비스 선택:", ["1. 📊 한눈에 보는 맞춤 리포트", "2. 💬 AI 챗봇 1:1 Q&A"], horizontal=True)
+
+    # 분석 버튼
+    col_btn, _ = st.columns([1, 2])
+    with col_btn:
+        if st.button("🚀 선택 기업 분석 및 맞춤 진단", type="primary", use_container_width=True):
+            st.session_state["analysis_request"] = name
+
     st.divider()
 
-    try:
-        dart_key = st.secrets.get("DART_API_KEY")
-    except Exception:
-        dart_key = None
+    # 화면 제어
+    analyzed_target = st.session_state.get("analysis_request")
+    if not analyzed_target or analyzed_target != name:
+        with st.container(border=True):
+            st.info(f"💡 상단에서 **[{name}]** 종목을 확인하신 후 **[🚀 선택 기업 분석 및 맞춤 진단]** 버튼을 클릭해 주세요.")
+            st.markdown(f"""
+            - **표준 산업분류 1:1 매칭**: 표준 코드(`{sector_code_str}`)를 통해 동종 산업군의 1주/1달/6개월/1년 수익률을 오차 없이 대조합니다.
+            - **증권사 보유 실데이터 진단**: 공모가, 기관경쟁률, 락업비율, 3개년 재무제표 등 DB에 완비된 정보를 기반으로 분석합니다.
+            - **1:1 고객 포트폴리오 대조**: `{user_name}` 고객님의 실제 보유 주식(`USER_TRADE_INFO`) 대비 분산/쏠림을 진단합니다.
+            """)
+        return
 
-    if st.button("선택 기업 공시 분석", type="primary"):
-        st.session_state["analysis_request"] = name
+    # 데이터 바인딩
+    result = {
+        **raw_info,
+        "company_name": name,
+        "sector": sector_str,
+        "sector_code": sector_code_str,
+        "ipo_metrics": terms,
+        "financials": raw_info.get("financial_history", {}),
+        "business_analysis": raw_info.get("business_analysis", {}),
+        "summary": {
+            "business": raw_info.get("business_analysis", {}).get("business_summary", "공시 확인 필요"),
+            "risks": raw_info.get("business_analysis", {}).get("investment_risks", "공시 확인 필요")
+        },
+        "strengths": raw_info.get("business_analysis", {}).get("strengths", []),
+        "updated_at": raw_info.get("updated_at") or target_meta.get("update_time", ""),
+        "_from_cache": True
+    }
 
-    result = {}
-    if not dart_key:
-        st.info("공시 분석을 사용하려면 .streamlit/secrets.toml에 DART_API_KEY를 설정하세요.")
-    elif st.session_state.get("analysis_request") == name:
-        candidate_key = "dart_candidate_" + name
-        with st.spinner("OpenDART 공시와 재무제표를 확인하는 중..."):
-            result = get_disclosure_analysis(
-                {"kind_id": name, "company_name": name}, dart_key, client,
-                corp_code=st.session_state.get(candidate_key)
-            )
+    st.caption(f"⚡ **증권사 마스터 DB 연동 완료** ({result.get('updated_at', '')} 기준 데이터)")
 
-        if result.get("candidates"):
-            choice = st.selectbox(
-                "DART 기업 선택", result["candidates"],
-                format_func=lambda item: f"{item['company_name']} ({item['corp_code']})"
-            )
-            if st.button("이 기업으로 분석"):
-                st.session_state[candidate_key] = choice["corp_code"]
-                st.rerun()
-            result = {}
-    else:
-        st.caption("공시 분석 버튼을 누르면 선택 기업의 공개 자료를 가져옵니다.")
-
-    # 화면 모드 렌더링 호출부:
+    # 렌더링
     if view_mode.startswith("1."):
-        # 👈 여기서 user_name을 전달합니다.
         _render_report(name, result, client, user_name=user_name)
     else:
         _render_chat(name, result, client)
