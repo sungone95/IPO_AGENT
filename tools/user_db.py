@@ -1,13 +1,11 @@
-"""Supabase USER_TRADE_INFO 테이블 기반 고객 보유 포트폴리오 연동 모듈."""
+"""Supabase 실데이터 기반 고객 프로필 및 보유 자산 연동 모듈."""
 import streamlit as st
 from supabase import create_client, Client
 from typing import Dict, Any, List
-from collections import defaultdict
 
 
 @st.cache_resource
 def get_supabase_client() -> Client:
-    """Streamlit Secrets에서 Supabase 연결 클라이언트 생성"""
     url = st.secrets.get("SUPABASE_URL", "")
     key = st.secrets.get("SUPABASE_KEY", "")
     return create_client(url, key)
@@ -17,8 +15,8 @@ def get_all_users() -> List[str]:
     """DB에 등록된 모든 고객명 고유 목록 조회"""
     try:
         supabase = get_supabase_client()
-        response = supabase.table("USER_TRADE_INFO").select("user_name").execute()
-        users = sorted(list({row["user_name"] for row in (response.data or []) if row.get("user_name")}))
+        res = supabase.table("USER_TRADE_INFO").select("user_name").execute()
+        users = sorted(list({row["user_name"] for row in (res.data or []) if row.get("user_name")}))
         return users or ["김성원"]
     except Exception as e:
         st.warning(f"고객 목록 조회 실패: {e}")
@@ -26,67 +24,47 @@ def get_all_users() -> List[str]:
 
 
 def get_user_holdings(user_name: str) -> List[Dict[str, Any]]:
-    """DB에서 특정 고객의 개별 보유 주식 목록 조회"""
+    """DB에서 특정 고객의 실제 보유 종목 목록 조회"""
     try:
         supabase = get_supabase_client()
-        response = supabase.table("USER_TRADE_INFO").select("*").eq("user_name", user_name).execute()
-        return response.data or []
+        res = supabase.table("USER_TRADE_INFO").select("*").eq("user_name", user_name.strip()).execute()
+        return res.data or []
     except Exception as e:
-        st.warning(f"고객 보유 주식 DB 조회 실패: {e}")
+        st.warning(f"보유 주식 조회 실패: {e}")
         return []
 
 
 def get_user_profile_from_db(user_name: str) -> Dict[str, Any]:
-    """
-    USER_TRADE_INFO 테이블의 보유 내역을 조회하여 
-    portfolio_tool 및 Gemini가 분석에 사용하는 포맷으로 가공
-    """
-    holdings = get_user_holdings(user_name)
+    """고객의 투자성향과 실제 보유 종목 데이터를 결합하여 반환"""
+    supabase = get_supabase_client()
+    clean_name = user_name.strip()
+    
+    # 1. 고객 투자성향 조회 (없으면 기본값 세팅)
+    risk_profile = "성장추구형"
+    total_cash = 30000000
+    try:
+        prof_res = supabase.table("USER_PROFILE").select("*").eq("user_name", clean_name).execute()
+        if prof_res.data:
+            risk_profile = prof_res.data[0].get("risk_profile", "성장추구형")
+            total_cash = float(prof_res.data[0].get("total_cash", 30000000))
+    except Exception:
+        pass  # USER_PROFILE 테이블이 아직 없을 경우 대비 안전 fallback
 
-    if holdings:
-        sector_agg = defaultdict(lambda: {"count": 0, "total_qty": 0})
-        for item in holdings:
-            sector = item.get("stbd_sector", "기타")
-            qty = float(item.get("hold_qty") or 0)
-            sector_agg[sector]["count"] += 1
-            sector_agg[sector]["total_qty"] += qty
+    # 2. 실제 보유 주식 조회
+    holdings = get_user_holdings(clean_name)
+    holding_sectors = list({h.get("stbd_sector") for h in holdings if h.get("stbd_sector")})
 
-        sector_holding_stats = [
-            {
-                "sector": sector,
-                "trade_count": data["count"],
-                "total_hold_qty": data["total_qty"],
-                "avg_holding_days": 2.0,
-                "win_rate": 80.0,
-                "avg_return_rate": 18.5
-            }
-            for sector, data in sector_agg.items()
-        ]
-
-        return {
-            "user_name": user_name,
-            "risk_profile": "성장추구형",
-            "holdings": holdings,
-            "sector_holding_stats": sector_holding_stats
-        }
-
-    # 해당 고객의 보유 종목이 아직 없을 때
     return {
-        "user_name": user_name,
-        "risk_profile": "성장추구형",
-        "holdings": [],
-        "sector_holding_stats": []
+        "user_name": clean_name,
+        "risk_profile": risk_profile,
+        "total_cash": total_cash,
+        "holdings": holdings,
+        "holding_sectors": holding_sectors,
+        "total_holdings_count": len(holdings)
     }
 
 
-def insert_user_holding(
-    user_name: str,
-    stbd_code: str,
-    stbd_name: str,
-    hold_qty: float,
-    stbd_sector: str
-) -> bool:
-    """USER_TRADE_INFO 테이블에 보유 주식 등록/수정"""
+def insert_user_holding(user_name: str, stbd_code: str, stbd_name: str, hold_qty: float, stbd_sector: str) -> bool:
     try:
         supabase = get_supabase_client()
         payload = {
