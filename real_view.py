@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import streamlit as st
 import pandas as pd
+from config import DEFAULT_GEMINI_MODEL
 from tools.ipo_db import get_active_ipo_master_list, get_supabase_client
 from tools.batch_issue_updater import run_batch_update_issues
 from tools.user_db import get_user_profile_from_db
@@ -311,7 +312,7 @@ def _render_chat(name: str, result: dict, client):
             system_ctx = f"종목명: {name}, 업종: {result.get('sector')}, 표준코드: {result.get('sector_code')}, 공모정보: {result.get('ipo_terms')}, 재무/사업: {result.get('business_analysis')}"
             full_prompt = f"다음 공모주 데이터를 바탕으로 질문에 주식 초보자 눈높이로 친절하고 솔직하게 2~3문장으로 답하세요.\n\n[데이터]\n{system_ctx}\n\n[질문]\n{user_prompt}"
             res = client.models.generate_content(
-                model="gemini-2.5-flash",
+                model = DEFAULT_GEMINI_MODEL,
                 contents=full_prompt
             )
             bot_reply = res.text.strip()
