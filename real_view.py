@@ -8,7 +8,7 @@ from tools.ipo_db import get_active_ipo_master_list, get_supabase_client
 from tools.batch_issue_updater import run_batch_update_issues
 from tools.user_db import get_user_profile_from_db
 from tools.ipo_advisor import generate_ipo_recommendation_from_db
-
+from google.genai.errors import ClientError, APIError
 
 def _format_price(val) -> str:
     """공모가 안전 포맷팅 헬퍼 (문자열, 쉼표, None 방어)"""
@@ -292,9 +292,13 @@ def _render_report(name: str, result: dict, client, user_name: str = "김성원"
 
 
 def _render_chat(name: str, result: dict, client):
-    """선택 종목 1:1 AI 질의응답 챗봇"""
+    """선택 종목 1:1 AI 질의응답 챗봇 (정밀 진단용 상세 에러 뷰어 탑재)"""
     st.markdown(f"#### 💬 `{name}` 공모주 무엇이든 물어보세요")
     st.caption("전문 용어 없이 초보자 눈높이로 쉽게 답변해 드립니다.")
+
+    if client is None:
+        st.error("⚠️ Gemini Client가 초기화되지 않았습니다. API 키를 확인해 주세요.")
+        return
 
     if "chat_history" not in st.session_state:
         st.session_state["chat_history"] = []
@@ -309,16 +313,47 @@ def _render_chat(name: str, result: dict, client):
             st.markdown(user_prompt)
 
         with st.chat_message("assistant"):
-            system_ctx = f"종목명: {name}, 업종: {result.get('sector')}, 표준코드: {result.get('sector_code')}, 공모정보: {result.get('ipo_terms')}, 재무/사업: {result.get('business_analysis')}"
-            full_prompt = f"다음 공모주 데이터를 바탕으로 질문에 주식 초보자 눈높이로 친절하고 솔직하게 2~3문장으로 답하세요.\n\n[데이터]\n{system_ctx}\n\n[질문]\n{user_prompt}"
-            res = client.models.generate_content(
-                model = DEFAULT_GEMINI_MODEL,
-                contents=full_prompt
+            system_ctx = (
+                f"종목명: {name}, 업종: {result.get('sector')}, 표준코드: {result.get('sector_code')}, "
+                f"공모정보: {result.get('ipo_terms')}, 재무/사업: {result.get('business_analysis')}"
             )
-            bot_reply = res.text.strip()
-            st.markdown(bot_reply)
-            st.session_state["chat_history"].append({"role": "assistant", "content": bot_reply})
+            full_prompt = (
+                f"다음 공모주 데이터를 바탕으로 질문에 주식 초보자 눈높이로 친절하고 솔직하게 2~3문장으로 답하세요.\n\n"
+                f"[데이터]\n{system_ctx}\n\n[질문]\n{user_prompt}"
+            )
 
+            # 🌟 [정밀 진단 블록] 구글 서버 응답 원문 완전 분해 출력
+            try:
+                res = client.models.generate_content(
+                    model=DEFAULT_GEMINI_MODEL,
+                    contents=full_prompt
+                )
+                bot_reply = res.text.strip()
+                st.markdown(bot_reply)
+                st.session_state["chat_history"].append({"role": "assistant", "content": bot_reply})
+
+            except ClientError as ce:
+                # HTTP 4xx 클라이언트 에러 객체 완전 분해
+                st.error("🚨 Gemini API ClientError 발생")
+                
+                err_detail = {
+                    "호출 모델명": DEFAULT_GEMINI_MODEL,
+                    "HTTP Status Code": getattr(ce, "code", None) or getattr(ce, "status_code", "확인 불가"),
+                    "Error Message": getattr(ce, "message", str(ce)),
+                    "Server Response Payload": getattr(ce, "response_json", None) or getattr(ce, "response", str(ce))
+                }
+                
+                st.markdown("##### 🔍 구글 서버 상세 에러 응답")
+                st.json(err_detail)
+
+            except APIError as ae:
+                st.error(f"🚨 Google API Error ({ae.code}): {ae.message}")
+                if hasattr(ae, "response_json"):
+                    st.json(ae.response_json)
+
+            except Exception as e:
+                st.error(f"🚨 기타 예외 발생: {type(e).__name__}")
+                st.code(str(e))
 
 def render_real_ipo(client, user_name: str = "김성원"):
     st.title("📈 IPO AI 투자 AGENT (실제 기업 분석)")
